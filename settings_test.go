@@ -6,9 +6,14 @@ import (
 )
 
 func TestShortcutValidation(t *testing.T) {
-	for _, s := range []string{"", "M", "Ctrl+Ctrl+M", "Ctrl+Nope", "Alt+F4"} {
+	for _, s := range []string{"", "Ctrl+Ctrl+M", "Ctrl+Nope", "Alt+F4"} {
 		if _, err := parseShortcut(s); err == nil {
 			t.Errorf("accepted %q", s)
+		}
+	}
+	for _, input := range []string{"M", "F8", "Ctrl", "Space", "M+N", "Ctrl+M+N", "Ctrl+Shift+M+N"} {
+		if _, err := parseShortcut(input); err != nil {
+			t.Errorf("rejected %s: %v", input, err)
 		}
 	}
 	s, err := parseShortcut("shift+ctrl+m")
