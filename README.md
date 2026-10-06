@@ -48,5 +48,3 @@ wails build
 On Ubuntu 24.04, install `build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev` and build with `wails build -tags webkit2_41`. macOS needs Xcode Command Line Tools. Development builds use `wails dev`.
 
 CI runs tests and produces executable archives. Release tags must match the version in `wails.json` and `frontend/package.json`; mismatches fail rather than creating misleading filenames. Product changes are reviewed through pull requests.
-
-
