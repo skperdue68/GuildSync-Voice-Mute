@@ -1,11 +1,39 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
+
+func TestLoginAcceptsRevocableSessionWithoutExpiry(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"ok":true,"allowed":true,"token":"server-token","user":{"role":"user"}}`)
+	}))
+	defer server.Close()
+	session, err := exchangeCode(server.URL, "code")
+	if err != nil || !session.LoggedIn || session.Token != "server-token" {
+		t.Fatalf("%+v %v", session, err)
+	}
+	if err := validateSession(session); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoginRejectsExplicitExpiredOrMissingToken(t *testing.T) {
+	for _, body := range []string{
+		`{"ok":true,"allowed":true,"token":"server-token","expires_at":"2000-01-01T00:00:00Z"}`,
+		`{"ok":true,"allowed":true}`,
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) }))
+		if _, err := exchangeCode(server.URL, "code"); err == nil {
+			t.Fatal("accepted invalid session")
+		}
+		server.Close()
+	}
+}
 
 func TestOAuthStateIsOneUse(t *testing.T) {
 	a := &App{loginState: "expected"}

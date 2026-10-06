@@ -25,6 +25,8 @@ func startX11(shortcut Shortcut, edge func(bool), failed func(error)) (func(), e
 	for _, key := range shortcut.Keys {
 		names := []string{}
 		switch key {
+		case 8, 9, 13, 32, 33, 34, 35, 36, 37, 38, 39, 40, 45, 46:
+			names = []string{map[int]string{8: "BackSpace", 9: "Tab", 13: "Return", 32: "space", 33: "Prior", 34: "Next", 35: "End", 36: "Home", 37: "Left", 38: "Up", 39: "Right", 40: "Down", 45: "Insert", 46: "Delete"}[key]}
 		case 17:
 			names = []string{"Control_L", "Control_R"}
 		case 18:

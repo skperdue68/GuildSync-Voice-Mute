@@ -187,13 +187,13 @@ func exchangeCode(base, code string) (Session, error) {
 	if !body.Allowed {
 		return Session{StatusMessage: body.Message}, nil
 	}
-	if body.Token == "" || !body.ExpiresAt.After(time.Now()) {
+	if body.Token == "" || (!body.ExpiresAt.IsZero() && !body.ExpiresAt.After(time.Now())) {
 		return Session{}, errors.New("GuildSync returned an invalid or expired session.")
 	}
 	return Session{LoggedIn: true, Allowed: true, Token: body.Token, ExpiresAt: body.ExpiresAt, User: body.User, SocketURL: base, AuthServerURL: base, StatusMessage: body.Message}, nil
 }
 func validateSession(s Session) error {
-	if !s.LoggedIn || !s.Allowed || s.Token == "" || !s.ExpiresAt.After(time.Now()) {
+	if !s.LoggedIn || !s.Allowed || s.Token == "" || (!s.ExpiresAt.IsZero() && !s.ExpiresAt.After(time.Now())) {
 		return errors.New("Please sign in with Discord.")
 	}
 	req, err := http.NewRequest(http.MethodGet, s.AuthServerURL+"/api/auth/session", nil)

@@ -21,6 +21,15 @@ type portalShortcut struct {
 }
 
 func startWayland(shortcut Shortcut, edge func(bool), failed func(error)) (func(), error) {
+	actionKeys := 0
+	for _, key := range shortcut.Keys {
+		if key != 16 && key != 17 && key != 18 {
+			actionKeys++
+		}
+	}
+	if actionKeys != 1 {
+		return nil, fmt.Errorf("This Wayland shortcut portal requires one ordinary key, optionally with Ctrl, Alt or Shift. Arbitrary multi-key holds are supported on Windows, macOS and X11.")
+	}
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
 		return nil, fmt.Errorf("Wayland shortcut portal is unavailable: %w", err)

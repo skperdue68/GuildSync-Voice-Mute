@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -19,41 +20,62 @@ type Shortcut struct {
 
 func parseShortcut(input string) (Shortcut, error) {
 	result := Shortcut{}
-	parts := strings.Split(strings.ToUpper(strings.TrimSpace(input)), "+")
+	codes := map[string]int{"CTRL": 17, "ALT": 18, "SHIFT": 16, "SPACE": 32, "TAB": 9, "ENTER": 13, "BACKSPACE": 8, "DELETE": 46, "INSERT": 45, "HOME": 36, "END": 35, "PAGEUP": 33, "PAGEDOWN": 34, "LEFT": 37, "UP": 38, "RIGHT": 39, "DOWN": 40}
+	labels := map[string]string{"CTRL": "Ctrl", "ALT": "Alt", "SHIFT": "Shift", "SPACE": "Space", "TAB": "Tab", "ENTER": "Enter", "BACKSPACE": "Backspace", "DELETE": "Delete", "INSERT": "Insert", "HOME": "Home", "END": "End", "PAGEUP": "PageUp", "PAGEDOWN": "PageDown", "LEFT": "Left", "UP": "Up", "RIGHT": "Right", "DOWN": "Down"}
 	seen := map[string]bool{}
-	mods := map[string]int{"CTRL": 17, "ALT": 18, "SHIFT": 16}
-	for _, part := range parts[:len(parts)-1] {
-		part = strings.TrimSpace(part)
-		key, ok := mods[part]
-		if !ok || seen[part] {
-			return result, fmt.Errorf("use Ctrl, Alt or Shift plus a letter, number or F1–F12")
+	for _, part := range strings.Split(strings.ToUpper(strings.TrimSpace(input)), "+") {
+		key := strings.TrimSpace(part)
+		if seen[key] {
+			return result, fmt.Errorf("duplicate shortcut key")
 		}
-		seen[part] = true
-		_ = key
-	}
-	key := strings.TrimSpace(parts[len(parts)-1])
-	code := 0
-	if len(key) == 1 && ((key[0] >= 'A' && key[0] <= 'Z') || (key[0] >= '0' && key[0] <= '9')) {
-		code = int(key[0])
-	}
-	for n := 1; n <= 12; n++ {
-		if key == fmt.Sprintf("F%d", n) {
-			code = 111 + n
+		seen[key] = true
+		code := codes[key]
+		if len(key) == 1 && ((key[0] >= 'A' && key[0] <= 'Z') || (key[0] >= '0' && key[0] <= '9')) {
+			code = int(key[0])
 		}
-	}
-	if len(seen) == 0 || code == 0 || ((seen["ALT"] || seen["CTRL"]) && key == "F4") {
-		return result, fmt.Errorf("use Ctrl, Alt or Shift plus a letter, number or F1–F12; Alt+F4 and Ctrl+F4 are reserved")
-	}
-	labels := []string{}
-	for _, mod := range []string{"CTRL", "ALT", "SHIFT"} {
-		if seen[mod] {
-			result.Keys = append(result.Keys, mods[mod])
-			labels = append(labels, map[string]string{"CTRL": "Ctrl", "ALT": "Alt", "SHIFT": "Shift"}[mod])
+		for n := 1; n <= 12; n++ {
+			if key == fmt.Sprintf("F%d", n) {
+				code = 111 + n
+			}
 		}
+		if code == 0 {
+			return result, fmt.Errorf("use one or more letters, numbers, F1–F12, Ctrl, Alt, Shift, or supported navigation keys")
+		}
+		result.Keys = append(result.Keys, code)
 	}
-	result.Keys = append(result.Keys, code)
-	labels = append(labels, key)
-	result.Label = strings.Join(labels, "+")
+	if ((seen["ALT"] || seen["CTRL"]) && seen["F4"]) || (seen["ALT"] && seen["TAB"]) || (seen["CTRL"] && seen["ALT"] && seen["DELETE"]) {
+		return result, fmt.Errorf("reserved system shortcut")
+	}
+	order := func(code int) int {
+		switch code {
+		case 17:
+			return -3
+		case 18:
+			return -2
+		case 16:
+			return -1
+		}
+		return code
+	}
+	sort.Slice(result.Keys, func(i, j int) bool { return order(result.Keys[i]) < order(result.Keys[j]) })
+	canonical := []string{}
+	for _, code := range result.Keys {
+		label := ""
+		for key, value := range codes {
+			if value == code {
+				label = labels[key]
+			}
+		}
+		if label == "" {
+			if code >= 112 {
+				label = fmt.Sprintf("F%d", code-111)
+			} else {
+				label = string(rune(code))
+			}
+		}
+		canonical = append(canonical, label)
+	}
+	result.Label = strings.Join(canonical, "+")
 	return result, nil
 }
 func dataPath(name string) (string, error) {
