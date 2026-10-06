@@ -1,0 +1,8 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createVoiceSession} from './voice-session.js';
+function setup(){const sent=[];let tick=null;const socket={connected:true,emit(event,payload,ack){sent.push(payload);ack?.({ok:true});}};const controller=createVoiceSession({getSocket:()=>socket,clock:{setInterval(fn){tick=fn;return 1},clearInterval(){tick=null}},notify(){},uuid:()=>`s${sent.length}`});return{sent,socket,controller,tick:()=>tick?.()};}
+test('hold emits heartbeat; release stops it',()=>{const s=setup();s.controller.onEdge(true);s.tick();s.controller.onEdge(false);s.tick();assert.deepEqual(s.sent.map(x=>x.state),['pressed','heartbeat','released']);});
+test('disconnect never replays held key',()=>{const s=setup();s.controller.onEdge(true);s.socket.connected=false;s.controller.onDisconnect();s.socket.connected=true;s.controller.onEdge(true);assert.equal(s.sent.length,1);s.controller.onEdge(false);s.controller.onEdge(true);assert.equal(s.sent.at(-1).state,'pressed');assert.equal(s.sent.length,2);});
+test('stop blocks until a physical release',()=>{const s=setup();s.controller.onEdge(true);s.controller.stop();s.controller.onEdge(true);s.tick();assert.deepEqual(s.sent.map(x=>x.state),['pressed','released']);s.controller.onEdge(false);s.controller.onEdge(true);assert.equal(s.sent.at(-1).state,'pressed');});
+test('rejected press cancels heartbeats and releases',()=>{const s=setup();s.socket.emit=(e,p,a)=>{s.sent.push(p);if(p.state==='pressed')a({ok:false,message:'Denied'});else a?.({ok:true})};s.controller.onEdge(true);s.tick();assert.deepEqual(s.sent.map(x=>x.state),['pressed','released']);});

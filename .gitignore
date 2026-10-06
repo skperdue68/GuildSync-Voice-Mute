@@ -1,0 +1,11 @@
+/build/bin/
+/frontend/node_modules/
+/frontend/.dependency-cache/
+.publish-repository.ps1
+/frontend/dist/
+/frontend/wailsjs/
+/release/
+.env
+*session*.json
+settings.json
+.DS_Store

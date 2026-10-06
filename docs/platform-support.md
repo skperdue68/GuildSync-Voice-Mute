@@ -1,0 +1,25 @@
+# Platform support and permissions
+
+## Windows
+
+Read the global keyboard state with `GetAsyncKeyState` every 25 milliseconds. No keys are intercepted or suppressed. The initial held state is blocked until all required keys have been released. WebView2 is needed for the GUI. Secure desktops, lock screens and disconnected sessions do not provide an ordinary interactive keyboard context.
+
+## macOS
+
+Use CoreGraphics global key-state observation. Allow the application in **System Settings → Privacy & Security → Input Monitoring**, then restart and enable it again. If permission is absent, activation fails with instructions. macOS can reserve shortcuts or treat function keys as media controls; use an ordinary modifier/letter combination when necessary. The app is not signed or notarized by this project.
+
+The permission check uses Apple's [CGPreflightListenEventAccess](https://developer.apple.com/documentation/coregraphics/cgpreflightlisteneventaccess()). Native key-state observation runs outside network operations. Manual testing on macOS is required before declaring the global hold feature verified.
+
+## Linux X11
+
+Requires an accessible X11 display and `libX11`. The listener queries key state instead of grabbing or consuming the keys. Shortcut key names are resolved against the keyboard layout when activation begins; restart/re-enable after changing your keyboard layout.
+
+## Linux Wayland
+
+Requires a desktop implementing the [GlobalShortcuts portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.GlobalShortcuts.html). The desktop may show its own approval/binding dialog. Its actual binding is authoritative and may differ from the app's requested shortcut; check the dialog. Declining permission or a missing backend leaves activation unavailable. The app never falls back to a focused-window shortcut.
+
+Activation and deactivation signals drive hold/release. Portal support varies by desktop; install the appropriate `xdg-desktop-portal` backend. A portal timeout or disconnect ends local activity and the bot's session expiry remains the safety fallback.
+
+## Current verification boundary
+
+Automated tests cover parser, authentication and transport lifecycle. CI is configured for native Windows, macOS and Linux builds. A live desktop/Discord integration check is still required on each target platform, particularly Wayland binding and macOS permission behavior. Do not use a build result as evidence that those checks were performed.
