@@ -137,7 +137,7 @@ func (a *App) StartDiscordLogin() error {
 	}()
 	// Bound abandoned login listeners; do not close a later login's listener.
 	go func() { time.Sleep(5 * time.Minute); a.stopOAuthServer(server) }()
-	params := url.Values{"response_type": {"code"}, "client_id": {discordClientID}, "redirect_uri": {redirectURI}, "scope": {"identify email"}, "state": {state}, "prompt": {"consent"}}
+	params := url.Values{"response_type": {"code"}, "client_id": {discordClientID}, "redirect_uri": {redirectURI}, "scope": {"identify"}, "state": {state}, "prompt": {"consent"}}
 	runtime.BrowserOpenURL(a.ctx, "https://discord.com/oauth2/authorize?"+params.Encode())
 	return nil
 }
@@ -164,7 +164,7 @@ func (a *App) stopOAuth() {
 }
 func exchangeCode(base, code string) (Session, error) {
 	data, _ := json.Marshal(map[string]string{"code": code, "redirect_uri": redirectURI})
-	response, err := (&http.Client{Timeout: 20 * time.Second}).Post(base+"/api/auth/discord/desktop-token", "application/json", bytes.NewReader(data))
+	response, err := (&http.Client{Timeout: 20 * time.Second}).Post(base+"/api/auth/discord/voice-token", "application/json", bytes.NewReader(data))
 	if err != nil {
 		return Session{}, errors.New("Could not contact the GuildSync login service.")
 	}
@@ -196,18 +196,18 @@ func validateSession(s Session) error {
 	if !s.LoggedIn || !s.Allowed || s.Token == "" || (!s.ExpiresAt.IsZero() && !s.ExpiresAt.After(time.Now())) {
 		return errors.New("Please sign in with Discord.")
 	}
-	req, err := http.NewRequest(http.MethodGet, s.AuthServerURL+"/api/auth/session", nil)
+	req, err := http.NewRequest(http.MethodGet, s.AuthServerURL+"/api/voice/auth/session", nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+s.Token)
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	if err != nil {
-		return errors.New("Unable to verify your GuildSync account; reconnect to try again.")
+		return errors.New("Unable to verify your Discord voice session; reconnect to try again.")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return errors.New("Your GuildSync session is unavailable or has ended. Sign in again.")
+		return errors.New("Your voice session is unavailable or has ended. Sign in again.")
 	}
 	return nil
 }
@@ -272,7 +272,7 @@ func (a *App) Logout() error {
 		return err
 	}
 	if s.Token != "" {
-		req, _ := http.NewRequest(http.MethodPost, backendURL+"/api/auth/logout", nil)
+		req, _ := http.NewRequest(http.MethodPost, backendURL+"/api/voice/auth/logout", nil)
 		req.Header.Set("Authorization", "Bearer "+s.Token)
 		resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 		if err == nil {

@@ -22,6 +22,31 @@ func TestLoginAcceptsRevocableSessionWithoutExpiry(t *testing.T) {
 	}
 }
 
+func TestLoginAndVerificationUseVoiceOnlyEndpoints(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/discord/voice-token":
+			fmt.Fprint(w, `{"ok":true,"allowed":true,"token":"voice-token","user":{"role":"voice"}}`)
+		case "/api/voice/auth/session":
+			w.WriteHeader(200)
+		default:
+			t.Errorf("used non-voice endpoint %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+	session, err := exchangeCode(server.URL, "code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.User.Role != "voice" {
+		t.Fatal(session)
+	}
+	if err := validateSession(session); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoginRejectsExplicitExpiredOrMissingToken(t *testing.T) {
 	for _, body := range []string{
 		`{"ok":true,"allowed":true,"token":"server-token","expires_at":"2000-01-01T00:00:00Z"}`,
