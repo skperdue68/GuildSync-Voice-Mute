@@ -4,7 +4,7 @@ A small desktop companion for GuildSync's Discord voice-channel mute feature. It
 
 ## Use
 
-1. Open the application and choose **Sign in with Discord**. Complete login in your browser. Your GuildSync account must be approved as **User** or **Admin**, and your Discord role must be allowed by the server's voice-mute policy.
+1. Open the application and choose **Sign in with Discord**. Complete login in your browser. You do not need a GuildSync account or GuildSync approval. You must belong to the configured Discord server and have a role allowed by its voice-mute policy.
 2. Choose **Set shortcut**, then press one or more supported keys and release all of them to save. Examples: `F8`, `Space`, `M+N`, or `Ctrl+Shift+M`. Letters, numbers, F1–F12, Ctrl/Alt/Shift, and navigation keys are supported. Escape cancels. **Return to Default** restores Ctrl+M and disables the shortcut.
 3. Enable the global shortcut and join a Discord voice channel. Hold the shortcut to request temporary mutes for eligible lower-ranked members in that channel. Release it to end the request.
 
@@ -14,9 +14,9 @@ The application must remain running. Closing its window exits; this first versio
 
 ## Server requirements
 
-Deploy [GuildSync's voice-mute feature](https://github.com/skperdue68/POC/pull/85) and configure its allowed Discord role names or IDs, rank order, and enabled policy. The bot needs **Mute Members** and **View Audit Log**. The companion connects to `https://guildsync.perdues.me`, using the same authenticated endpoint as GuildSync. There is no port 3005 companion service.
+Deploy [GuildSync's voice-mute feature](https://github.com/skperdue68/POC/pull/85) and configure its allowed Discord role names or IDs, rank order, and enabled policy. The bot needs **Mute Members** and **View Audit Log**. The companion connects to `https://guildsync.perdues.me`, using dedicated voice-only authentication endpoints on the existing backend. There is no port 3005 companion service.
 
-The Enable checkbox remains disabled until you sign in with an approved User/Admin account. Account approval and the role allowlist are separate requirements. A new account can be pending or a Viewer until an administrator grants the required access. GuildSync Admin status does not bypass Discord rank checks.
+The Enable checkbox remains disabled until Discord login succeeds. Discord membership, permitted requester roles, recognized ranks and bot permissions remain authoritative for mute requests. GuildSync Viewers may also mute from GuildSync when their Discord role permits it; a GuildSync Admin role does not bypass Discord rank protection.
 
 ## Install and platform support
 
@@ -26,7 +26,9 @@ See [platform support and permissions](docs/platform-support.md), including macO
 
 ## Saved login and settings
 
-The companion uses its own `GuildSync-Voice-Mute` directory in your OS's user configuration folder. It saves `session.json` and `settings.json`; it does not change GuildSync's existing saved login. Do not share the session file: it contains your account bearer token. Sign out removes it locally and attempts server logout. GuildSync sessions can be revocable without a fixed expiry timestamp; the companion accepts this format and still verifies saved sessions with the backend. A supplied expiry is enforced.
+The companion uses its own `GuildSync-Voice-Mute` directory in your OS's user configuration folder. It saves `session.json` and `settings.json`; it does not change GuildSync's existing saved login. Do not share the session file: it contains your account bearer token. Sign out removes it locally and attempts server logout. New standalone voice sessions expire after 30 days, can be revoked on sign-out, and are verified by the backend. Existing saved GuildSync logins must be replaced by signing in again after this update. Standalone tokens authorize only mute operations, not GuildSync data.
+
+Backend startup creates separate `guildsync_voice_identities` and `guildsync_voice_login_sessions` tables. Discord identities stored there do not appear in GuildSync account management. Later logging into GuildSync itself creates the usual account and follows its normal approval process. Deploy the matching GuildSync backend PR before installing this client.
 
 The shared browser callback listens at `127.0.0.1:53682` during login. If another GuildSync login is already listening, finish or close that login and try again. This is a local browser callback, not a new server port.
 

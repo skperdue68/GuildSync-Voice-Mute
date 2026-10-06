@@ -1,3 +1,4 @@
+export const canEnableVoiceSession=session=>Boolean(session?.logged_in&&session?.allowed&&session?.token);
 export function createAuthCoordinator(){
  let epoch=0;
  return {invalidate(){return ++epoch;},current(){return epoch;},

@@ -87,8 +87,8 @@ func (a *App) SetShortcutActive(active bool) error {
 	a.mu.Lock()
 	s := a.session
 	a.mu.Unlock()
-	if !s.LoggedIn || !s.Allowed || (s.User.Role != "user" && s.User.Role != "admin") {
-		return fmt.Errorf("Approved User or Admin access is required.")
+	if !s.LoggedIn || !s.Allowed || s.Token == "" {
+		return fmt.Errorf("Sign in with Discord to enable the shortcut.")
 	}
 	shortcut, err := parseShortcut(settings.Shortcut)
 	if err != nil {
