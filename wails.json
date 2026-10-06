@@ -1,0 +1,10 @@
+{
+ "$schema":"https://wails.io/schemas/config.v2.json",
+ "name":"GuildSync-Voice-Mute",
+ "outputfilename":"GuildSync-Voice-Mute",
+ "frontend:install":"npm ci",
+ "frontend:build":"npm run build",
+ "frontend:dev:watcher":"npm run dev",
+ "frontend:dev:serverUrl":"auto",
+ "info":{"productName":"GuildSync Voice Mute","productVersion":"1.0.0"}
+}
