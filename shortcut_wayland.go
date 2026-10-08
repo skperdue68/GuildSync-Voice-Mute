@@ -32,7 +32,7 @@ func startWayland(shortcut Shortcut, edge func(bool), failed func(error)) (func(
 	}
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
-		return nil, fmt.Errorf("Wayland shortcut portal is unavailable: %w", err)
+		return nil, &shortcutUnavailableError{fmt.Sprintf("Mute is unavailable for this Linux version/session: Wayland shortcut portal is unavailable: %v", err)}
 	}
 	success := false
 	defer func() {
@@ -42,7 +42,7 @@ func startWayland(shortcut Shortcut, edge func(bool), failed func(error)) (func(
 	}()
 	var version uint32
 	if err = conn.Object(portalName, portalPath).Call("org.freedesktop.DBus.Properties.Get", 0, shortcutsInterface, "version").Store(new(dbus.Variant)); err != nil {
-		return nil, fmt.Errorf("This desktop does not provide the GlobalShortcuts portal. Global mute shortcuts are unavailable: %w", err)
+		return nil, &shortcutUnavailableError{fmt.Sprintf("Mute is unavailable for this Linux version/session: this desktop does not provide the GlobalShortcuts portal: %v", err)}
 	}
 	_ = version
 	signals := make(chan *dbus.Signal, 32)

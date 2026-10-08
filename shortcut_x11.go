@@ -19,7 +19,7 @@ import (
 func startX11(shortcut Shortcut, edge func(bool), failed func(error)) (func(), error) {
 	display := C.XOpenDisplay(nil)
 	if display == nil {
-		return nil, fmt.Errorf("No X11 display is available; use a supported desktop session.")
+		return nil, &shortcutUnavailableError{"Mute is unavailable for this Linux version/session: no X11 display is available."}
 	}
 	codes := [][]int{}
 	for _, key := range shortcut.Keys {
