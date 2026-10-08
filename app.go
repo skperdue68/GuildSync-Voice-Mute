@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"net/http"
@@ -9,21 +10,23 @@ import (
 )
 
 type App struct {
-	mu                 sync.Mutex
-	ctx                context.Context
-	loginState         string
-	oauthServer        *http.Server
-	session            Session
-	authGeneration     uint64
-	sessionPath        string
-	verifySession      func(Session) error
-	shortcutMu         sync.Mutex
-	settings           Settings
-	stopListener       func()
-	hold               holdState
-	active             bool
-	listenerGeneration uint64
-	emitEdge           func(bool)
+	mu                  sync.Mutex
+	ctx                 context.Context
+	loginState          string
+	oauthServer         *http.Server
+	session             Session
+	authGeneration      uint64
+	sessionPath         string
+	verifySession       func(Session) error
+	shortcutMu          sync.Mutex
+	settings            Settings
+	stopListener        func()
+	hold                holdState
+	active              bool
+	listenerGeneration  uint64
+	emitEdge            func(bool)
+	shortcutUnavailable error
+	startListener       func(Shortcut, func(bool), func(error)) (func(), error)
 }
 
 func NewApp() *App {
@@ -80,6 +83,11 @@ func (a *App) SetShortcutActive(active bool) error {
 		return nil
 	}
 	settings := a.settings
+	if a.shortcutUnavailable != nil {
+		err := a.shortcutUnavailable
+		a.shortcutMu.Unlock()
+		return err
+	}
 	a.shortcutMu.Unlock()
 	if !settings.Enabled {
 		return nil
@@ -94,7 +102,11 @@ func (a *App) SetShortcutActive(active bool) error {
 	if err != nil {
 		return err
 	}
-	stop, err := startShortcut(shortcut, func(down bool) { a.observeEdge(generation, down) }, func(err error) {
+	start := a.startListener
+	if start == nil {
+		start = startShortcut
+	}
+	stop, err := start(shortcut, func(down bool) { a.observeEdge(generation, down) }, func(err error) {
 		a.shortcutMu.Lock()
 		defer a.shortcutMu.Unlock()
 		if generation != a.listenerGeneration {
@@ -105,6 +117,12 @@ func (a *App) SetShortcutActive(active bool) error {
 		a.emit("shortcut-error", err.Error())
 	})
 	if err != nil {
+		var unavailable *shortcutUnavailableError
+		if errors.As(err, &unavailable) {
+			a.shortcutMu.Lock()
+			a.shortcutUnavailable = err
+			a.shortcutMu.Unlock()
+		}
 		return err
 	}
 	a.shortcutMu.Lock()

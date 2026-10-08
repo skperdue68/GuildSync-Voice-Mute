@@ -10,6 +10,8 @@ Use CoreGraphics global key-state observation. Allow the application in **System
 
 The permission check uses Apple's [CGPreflightListenEventAccess](https://developer.apple.com/documentation/coregraphics/cgpreflightlisteneventaccess()). Native key-state observation runs outside network operations. Manual testing on macOS is required before declaring the global hold feature verified.
 
+Input Monitoring is an operating-system permission. Installation cannot grant it and this application cannot bypass it. Grant permission yourself, restart the app, and enable the shortcut.
+
 ## Linux X11
 
 Requires an accessible X11 display and `libX11`. The listener queries key state instead of grabbing or consuming the keys. Shortcut key names are resolved against the keyboard layout when activation begins; restart/re-enable after changing your keyboard layout.
@@ -22,6 +24,9 @@ The portal supports one ordinary key (such as F8 or M), optionally with Ctrl/Alt
 
 Activation and deactivation signals drive hold/release. Portal support varies by desktop; install the appropriate `xdg-desktop-portal` backend. A portal timeout or disconnect ends local activity and the bot's session expiry remains the safety fallback.
 
+A missing GlobalShortcuts API or inaccessible desktop session does not fail installation or application startup. The app shows **Mute is unavailable for this Linux version/session** and disables Enable after detecting the missing API. It remembers that result for the current app session; restart after changing desktop support. A declined or timed-out consent request is not automatically retried on socket reconnect. To try consent again, explicitly change/re-enable the shortcut. The app does not request broader permissions to compensate for a missing API.
+
 ## Current verification boundary
 
 Automated tests cover parser, authentication and transport lifecycle. CI is configured for native Windows, macOS and Linux builds. A live desktop/Discord integration check is still required on each target platform, particularly Wayland binding and macOS permission behavior. Do not use a build result as evidence that those checks were performed.
+

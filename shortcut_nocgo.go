@@ -2,8 +2,6 @@
 
 package main
 
-import "fmt"
-
 func startX11(shortcut Shortcut, edge func(bool), failed func(error)) (func(), error) {
-	return nil, fmt.Errorf("This build lacks native X11 shortcut support.")
+	return nil, &shortcutUnavailableError{"Mute is unavailable for this Linux version/session: this build lacks native X11 shortcut support."}
 }
