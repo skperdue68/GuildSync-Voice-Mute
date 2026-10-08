@@ -12,7 +12,7 @@ var assets embed.FS
 
 func main() {
 	a := NewApp()
-	err := wails.Run(&options.App{Title: "GuildSync Voice Mute", Width: 480, Height: 540, MinWidth: 400, MinHeight: 480, AssetServer: &assetserver.Options{Assets: assets}, OnStartup: a.startup, OnShutdown: a.shutdown, Bind: []interface{}{a}})
+	err := wails.Run(&options.App{Title: "GuildSync Voice Mute v" + productVersion(), Width: 480, Height: 650, MinWidth: 400, MinHeight: 480, AssetServer: &assetserver.Options{Assets: assets}, OnStartup: a.startup, OnShutdown: a.shutdown, Bind: []interface{}{a}})
 	if err != nil {
 		println(err.Error())
 	}

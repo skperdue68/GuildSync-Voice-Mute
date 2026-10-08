@@ -20,7 +20,7 @@ The Enable checkbox remains disabled until Discord login succeeds. Discord membe
 
 ## Install and platform support
 
-Tagged builds publish Windows, macOS and Linux archives. Extract the platform archive, then run the executable/application. Windows requires WebView2. macOS builds are unsigned; distribution signing/notarization is not included. Linux builds target Ubuntu 24.04-compatible GTK3/WebKitGTK 4.1 environments.
+Published GitHub releases build and publish Windows, macOS and Linux archives. Extract the platform archive, then run the executable/application. Windows requires WebView2. macOS builds are unsigned; distribution signing/notarization is not included. Linux builds target Ubuntu 24.04-compatible GTK3/WebKitGTK 4.1 environments.
 
 See [platform support and permissions](docs/platform-support.md), including macOS Input Monitoring and Linux Wayland portal requirements. Native runners build all three platforms; actual global-shortcut behavior still needs verification on a real desktop. A successful build alone is not a claim that every desktop environment works.
 
@@ -49,4 +49,5 @@ wails build
 
 On Ubuntu 24.04, install `build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev` and build with `wails build -tags webkit2_41`. macOS needs Xcode Command Line Tools. Development builds use `wails dev`.
 
-CI runs tests and produces executable archives. Release tags must match the version in `wails.json` and `frontend/package.json`; mismatches fail rather than creating misleading filenames. Product changes are reviewed through pull requests.
+Pull requests run tests only. Ordinary pushes do not build the application. Publish a GitHub release with a tag such as `v1.0.1` to build Windows, macOS and Linux archives and attach them to that release. The release tag stamps `wails.json`, frontend package metadata, archive filenames and the visible version before building. The version appears in the window title and below the app heading. Local source builds use the version in `wails.json`; run `python tools/set-release-version.py v1.0.1` to change it locally. Product changes are reviewed through pull requests.
+
