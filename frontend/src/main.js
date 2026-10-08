@@ -14,10 +14,11 @@ const el=id=>document.getElementById(id);
 function status(message){el('status').textContent=String(message||'');}
 function render(){el('availability').textContent=availability.reason;el('account').textContent=session?.logged_in?`Signed in as ${session.user.display_name||session.user.username}`:'Not signed in';el('login').hidden=Boolean(session?.logged_in);el('logout').hidden=!session?.logged_in;el('shortcut').textContent=settings.shortcut;el('enabled').checked=settings.enabled;el('enabled').disabled=busy||!availability.available||!canEnableVoiceSession(session);el('capture').disabled=busy;el('default').disabled=busy;}
 const controller=createVoiceSession({getSocket:()=>socket,notify:status});
-async function disableListener(){controller.stop();await api().SetShortcutActive(false);}
-async function activate(){if(!socket?.connected||!settings.enabled||capturing||!availability.available)return;try{if(await activation.activate(()=>api().SetShortcutActive(true)))status('Ready. Hold your shortcut while in a Discord voice channel.');}catch(error){availability=await api().GetShortcutAvailability();render();status(availability.reason||error);}}
+async function disableListener(){activation.invalidate();controller.stop();await api().SetShortcutActive(false);}
+function canActivate(){return Boolean(socket?.connected&&settings.enabled&&!capturing&&availability.available);}
+async function activate(){if(!canActivate())return;try{if(await activation.activate(()=>api().SetShortcutActive(true),canActivate))status('Ready. Hold your shortcut while in a Discord voice channel.');}catch(error){availability=await api().GetShortcutAvailability();render();status(availability.reason||error);}}
 function clearSocket(){controller.stop();socket?.disconnect();socket=null;}
-async function connect(s){const epoch=auth.invalidate();await disableListener();if(epoch!==auth.current())return;clearSocket();session=s;render();if(!s?.allowed||!s.token){status('Sign in with Discord. Your server role determines mute access.');return;}socket=io(s.socket_url,{auth:{source:'voice-mute',token:s.token}});socket.on('connect',activate);socket.on('disconnect',()=>{controller.onDisconnect();api().SetShortcutActive(false).catch(status);status('Disconnected. Reconnecting…');});socket.on('connect_error',()=>{controller.onDisconnect();api().SetShortcutActive(false).catch(status);status('Connection unavailable. Check that your Discord login is current and the server is online.');});}
+async function connect(s){const epoch=auth.invalidate();await disableListener();if(epoch!==auth.current())return;clearSocket();session=s;render();if(!s?.allowed||!s.token){status('Sign in with Discord. Your server role determines mute access.');return;}socket=io(s.socket_url,{auth:{source:'voice-mute',token:s.token}});socket.on('connect',()=>{activation.invalidate();void activate();});socket.on('disconnect',()=>{activation.invalidate();controller.onDisconnect();api().SetShortcutActive(false).catch(status);status('Disconnected. Reconnecting…');});socket.on('connect_error',()=>{activation.invalidate();controller.onDisconnect();api().SetShortcutActive(false).catch(status);status('Connection unavailable. Check that your Discord login is current and the server is online.');});}
 async function save(next){activation.retry();busy=true;render();try{await disableListener();await api().SetShortcutSettings(next);settings=await api().GetShortcutSettings();await activate();}catch(error){status(error);}finally{busy=false;render();}}
 el('login').onclick=async()=>{auth.invalidate();try{await api().StartDiscordLogin();status('Complete Discord login in your browser.');}catch(error){status(error);}};
 el('logout').onclick=async()=>{auth.invalidate();try{await disableListener();clearSocket();await api().Logout();session=null;render();status('Signed out.');}catch(error){status(error);}};
@@ -36,7 +37,7 @@ window.addEventListener('blur',()=>shortcutCapture.cancel());
 window.runtime.EventsOn('voice-shortcut-edge',pressed=>controller.onEdge(pressed));
 window.runtime.EventsOn('login-complete',s=>connect(s).catch(status));
 window.runtime.EventsOn('login-error',status);
-window.runtime.EventsOn('shortcut-error',message=>{controller.stop();api().SetShortcutActive(false).catch(()=>{});status(message);});
+window.runtime.EventsOn('shortcut-error',message=>{activation.fail();controller.stop();api().SetShortcutActive(false).catch(()=>{});status(message);});
 window.addEventListener('beforeunload',()=>{controller.stop();socket?.disconnect();});
 // Revalidate saved accounts while running. Socket-side checks remain authoritative for every request.
 let verifying=false;
