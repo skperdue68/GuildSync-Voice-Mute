@@ -30,7 +30,7 @@ The design and plan were approved in the conversation on October 5, 2026. Execut
 - A single-instance guard (`me.perdues.guildsync.voicemute`) focuses the running window instead of letting a second copy contend for the OAuth callback port and duplicate mute requests.
 - A tray icon with a mute indicator, close-to-tray and a Quit entry was added; desktops without a tray host keep close-to-exit so the app cannot become unreachable. Start-at-login is per-platform and reversible.
 - The update check compares the embedded version with the newest published release and only opens validated GitHub release URLs; it never downloads or executes an installer.
-- The embedded asset server sets a content security policy that limits scripts, styles and network origins to the bundle and the GuildSync backend.
+- The embedded asset server keeps a deliberately narrow content security policy (`frame-ancestors`, `object-src`, `form-action`); `default-src`, `script-src`, `style-src` and `connect-src` are left out because the asset origin is not a plain HTTP origin on every platform (some load the bundle over the `wails://` scheme) and an untestable policy that fails closed blanks the window. Restricting script and connect origins needs a check in a real webview first, and the app renders no remote content.
 - Decision: keep the generated bindings committed (they are reviewable and the drift check is cheap). Decision: do not add TypeScript bindings while the frontend is plain JS with JSDoc; the generator's TypeScript output has no consumer yet.
 - Release builds are ad-hoc signed on macOS. Notarization and a Windows signing certificate need credentials this repository does not have.
 
