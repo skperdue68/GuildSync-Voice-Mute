@@ -23,6 +23,31 @@ jobs:
       - run: python -m unittest discover -s tools -p '*_test.py'
       - run: npm ci && npm test
         working-directory: frontend
+  compile:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Wails Linux dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
+      - name: Build frontend bundle
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Compile and test
+        run: |
+          go build ./...
+          go test ./...
   build:
     if: github.event_name == 'release'
     strategy:

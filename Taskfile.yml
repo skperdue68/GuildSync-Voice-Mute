@@ -21,11 +21,6 @@ tasks:
     cmds:
       - task: "{{.GOOS}}:build"
 
-  package:
-    summary: Packages a production build of the application
-    cmds:
-      - task: "{{.GOOS}}:package"
-
   run:
     summary: Runs the application
     cmds:
