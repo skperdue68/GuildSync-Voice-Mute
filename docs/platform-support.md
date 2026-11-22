@@ -24,9 +24,9 @@ A missing GlobalShortcuts API or inaccessible desktop session does not fail inst
 
 ## Tray, start at login and updates
 
-A tray icon is added when the desktop exposes one. Closing the window then hides it and the shortcut keeps working; **Quit** in the tray menu exits. Where no tray host is reachable (some Wayland sessions without a StatusNotifier watcher or panel), the app skips the tray and closing the window exits, so the app can never become unreachable. The tray menu shows whether a mute is active, and macOS shows a 🔇 status label while muted.
+A tray icon is added when the desktop exposes one. Closing the window then hides it and the shortcut keeps working; **Quit** in the tray menu exits. Where no tray host is reachable (some Wayland sessions without a StatusNotifier watcher or panel), the app skips the tray and closing the window exits, so the app can never become unreachable. A click on the tray icon shows or hides the window and the tray menu holds **Quit**. The tooltip shows whether a mute is active, and macOS shows a 🔇 status label while muted.
 
-**Start at login** writes a per-user entry: the `Run` key on Windows, a LaunchAgent plist on macOS, or an XDG autostart `.desktop` file on Linux. Disabling it removes that entry; the desktop's own entry is the source of truth.
+**Start at login** is registered through Wails' autostart manager, which writes the platform's own per-user entry: the `Run` key on Windows, the app registration on macOS, or an XDG autostart `.desktop` file on Linux. Disabling it removes that entry; the desktop's own entry is the source of truth, not a saved setting.
 
 **Check for updates** queries the GitHub releases API for the newest published release and compares it with the embedded version. The app does not download or execute anything: **Open download page** opens only `github.com/skperdue68/GuildSync-Voice-Mute/releases` URLs in the system browser.
 

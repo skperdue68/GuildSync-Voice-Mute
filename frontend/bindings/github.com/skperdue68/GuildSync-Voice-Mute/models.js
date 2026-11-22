@@ -176,9 +176,9 @@ export class ShortcutAvailability {
 }
 
 /**
- * UpdateInfo is the result of comparing the running build with the newest
- * published release. Releases are unsigned zips, so the app opens the release
- * page instead of downloading and running an installer itself.
+ * UpdateInfo is what the UI needs from a check: whether a newer release exists,
+ * where to read about it and a sentence to show. Releases are unsigned archives,
+ * so the app opens the release page instead of downloading and running anything.
  */
 export class UpdateInfo {
     /**
@@ -186,20 +186,6 @@ export class UpdateInfo {
      * @param {Partial<UpdateInfo>} [$$source = {}] - The source object to create the UpdateInfo.
      */
     constructor($$source = {}) {
-        if (!("current" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["current"] = "";
-        }
-        if (!("latest" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["latest"] = "";
-        }
         if (!("available" in $$source)) {
             /**
              * @member
@@ -213,13 +199,6 @@ export class UpdateInfo {
              * @type {string}
              */
             this["page_url"] = "";
-        }
-        if (!("notes" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["notes"] = "";
         }
         if (!("message" in $$source)) {
             /**

@@ -13,19 +13,15 @@ import (
 const (
 	updateRepo       = "skperdue68/GuildSync-Voice-Mute"
 	updateAPIURL     = "https://api.github.com/repos/" + updateRepo + "/releases/latest"
-	updatePageURL    = "https://github.com/" + updateRepo + "/releases/latest"
-	updatePagePrefix = "https://github.com/" + updateRepo + "/releases"
+	updateReleaseURL = "https://github.com/" + updateRepo + "/releases"
 )
 
-// UpdateInfo is the result of comparing the running build with the newest
-// published release. Releases are unsigned zips, so the app opens the release
-// page instead of downloading and running an installer itself.
+// UpdateInfo is what the UI needs from a check: whether a newer release exists,
+// where to read about it and a sentence to show. Releases are unsigned archives,
+// so the app opens the release page instead of downloading and running anything.
 type UpdateInfo struct {
-	Current   string `json:"current"`
-	Latest    string `json:"latest"`
 	Available bool   `json:"available"`
 	PageURL   string `json:"page_url"`
-	Notes     string `json:"notes"`
 	Message   string `json:"message"`
 }
 
@@ -72,14 +68,17 @@ func compareVersions(a, b string) int {
 	return 0
 }
 
+// usableReleasePage keeps a crafted payload from sending the browser anywhere
+// outside this repository's release pages.
 func usableReleasePage(url string) bool {
-	return url == updatePageURL || strings.HasPrefix(url, updatePagePrefix+"/") || url == updatePagePrefix
+	return url == updateReleaseURL || strings.HasPrefix(url, updateReleaseURL+"/")
 }
 
-// CheckForUpdate asks GitHub for the newest published release. It never downloads
-// or executes anything; the UI offers the release page instead.
+// CheckForUpdate asks GitHub for the newest published release. The latest
+// endpoint already skips drafts and pre-releases, so a pre-release is never
+// offered as an update.
 func (a *App) CheckForUpdate() (UpdateInfo, error) {
-	info := UpdateInfo{Current: productVersion(), PageURL: updatePageURL}
+	info := UpdateInfo{PageURL: updateReleaseURL}
 	endpoint := a.updateURL
 	if endpoint == "" {
 		endpoint = updateAPIURL
@@ -89,9 +88,8 @@ func (a *App) CheckForUpdate() (UpdateInfo, error) {
 		return info, err
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("User-Agent", "GuildSync-Voice-Mute/"+info.Current)
-	client := &http.Client{Timeout: 10 * time.Second}
-	response, err := client.Do(request)
+	request.Header.Set("User-Agent", "GuildSync-Voice-Mute/"+productVersion())
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
 	if err != nil {
 		return info, fmt.Errorf("check for updates: %w", err)
 	}
@@ -100,43 +98,30 @@ func (a *App) CheckForUpdate() (UpdateInfo, error) {
 		return info, fmt.Errorf("check for updates: %s", response.Status)
 	}
 	var release struct {
-		TagName    string `json:"tag_name"`
-		Body       string `json:"body"`
-		HTMLURL    string `json:"html_url"`
-		Draft      bool   `json:"draft"`
-		Prerelease bool   `json:"prerelease"`
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&release); err != nil {
 		return info, fmt.Errorf("check for updates: %w", err)
 	}
 	latest := strings.TrimPrefix(strings.TrimSpace(release.TagName), "v")
-	if latest == "" {
+	switch {
+	case latest == "":
 		info.Message = "No published release was found."
-		return info, nil
-	}
-	info.Latest = latest
-	if release.Draft || release.Prerelease {
-		info.Message = "The newest release is a pre-release; staying on " + info.Current + "."
-		return info, nil
-	}
-	if compareVersions(latest, info.Current) > 0 {
+	case compareVersions(latest, productVersion()) > 0:
 		info.Available = true
 		if usableReleasePage(release.HTMLURL) {
 			info.PageURL = release.HTMLURL
 		}
-		info.Notes = strings.TrimSpace(release.Body)
-		if len(info.Notes) > 1200 {
-			info.Notes = info.Notes[:1200] + "…"
-		}
 		info.Message = "Version " + latest + " is available."
-		return info, nil
+	default:
+		info.Message = "You are running the latest release."
 	}
-	info.Message = "You are running the latest release."
 	return info, nil
 }
 
 // OpenReleasePage opens a GuildSync release page in the system browser, refusing
-// any other URL so a crafted release payload cannot send the browser elsewhere.
+// any other URL.
 func (a *App) OpenReleasePage(url string) error {
 	if !usableReleasePage(url) {
 		return fmt.Errorf("only GuildSync release pages can be opened")

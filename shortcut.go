@@ -163,7 +163,7 @@ func (a *App) releaseMuteLocked() {
 }
 
 func (a *App) emitEdgeEvent(down bool) {
-	a.updateTrayIndicator(down, "")
+	a.updateTrayIndicator(down)
 	if a.emitEdge != nil {
 		a.emitEdge(down)
 		return

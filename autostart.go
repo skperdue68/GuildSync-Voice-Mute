@@ -1,17 +1,35 @@
 package main
 
-import "fmt"
+import (
+	"errors"
 
-// Start-at-login is registered with the desktop itself, so the operating system
-// entry is the source of truth rather than a settings field that can drift from
-// it. The platform files implement the three helpers below.
-func (a *App) StartAtLoginSupported() bool { return startAtLoginSupported() }
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
 
-func (a *App) GetStartAtLogin() bool { return startAtLoginActive() }
+// Wails registers the login entry with the platform itself, so the operating
+// system entry is the source of truth instead of a settings field that can drift
+// from it. The identifier keeps the entry named after the app on every platform
+// and matches the single-instance ID.
+const autostartIdentifier = "me.perdues.guildsync.voicemute"
+
+func (a *App) StartAtLoginSupported() bool {
+	return a.app != nil && a.app.Autostart != nil
+}
+
+func (a *App) GetStartAtLogin() bool {
+	if !a.StartAtLoginSupported() {
+		return false
+	}
+	enabled, err := a.app.Autostart.IsEnabled()
+	return err == nil && enabled
+}
 
 func (a *App) SetStartAtLogin(enabled bool) error {
-	if !startAtLoginSupported() {
-		return fmt.Errorf("starting at login is not supported on this platform")
+	if !a.StartAtLoginSupported() {
+		return errors.New("starting at login is unavailable")
 	}
-	return setStartAtLogin(enabled)
+	if !enabled {
+		return a.app.Autostart.Disable()
+	}
+	return a.app.Autostart.EnableWithOptions(application.AutostartOptions{Identifier: autostartIdentifier})
 }
