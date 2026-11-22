@@ -34,20 +34,20 @@ The shared browser callback listens at `127.0.0.1:53682` during login. If anothe
 
 ## Build from source
 
-Install Go 1.23 or newer, Node.js 24, and Wails v2.12.0 plus its native platform dependencies.
+Install Go 1.26 or newer, Node.js 24, and the Wails v3.1.0 CLI plus its native platform dependencies.
 
 ```sh
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
 cd frontend
 npm ci
 npm test
 npm run build
 cd ..
 go test ./...
-wails build
+wails3 build
 ```
 
-On Ubuntu 24.04, install `build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev` and build with `wails build -tags webkit2_41`. macOS needs Xcode Command Line Tools. Development builds use `wails dev`.
+On Ubuntu 24.04, install `build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev`. macOS needs Xcode Command Line Tools. Development builds use `wails3 dev`. Go methods exposed to the window are called through generated bindings in `frontend/bindings`; run `wails3 generate bindings` after changing exported methods.
 
-Pull requests run tests only. Ordinary pushes do not build the application. Publish a GitHub release with a tag such as `v1.0.1` to build Windows, macOS and Linux archives and attach them to that release. The release tag stamps `wails.json`, frontend package metadata, archive filenames and the visible version before building. The version appears in the window title and below the app heading. Local source builds use the version in `wails.json`; run `python tools/set-release-version.py v1.0.1` to change it locally. Product changes are reviewed through pull requests.
+Pull requests run tests only. Ordinary pushes do not build the application. Publish a GitHub release with a tag such as `v1.0.1` to build Windows, macOS and Linux archives and attach them to that release. The release tag stamps `build/config.yml`, the Windows and macOS bundle metadata, frontend package metadata, archive filenames and the visible version before building. The build output lands in `bin/`. The version appears in the window title and below the app heading. Local source builds use the version in `build/config.yml`; run `python tools/set-release-version.py v1.0.1` to change it locally. Product changes are reviewed through pull requests.
 

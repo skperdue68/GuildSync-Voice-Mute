@@ -1,17 +1,17 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"net/http"
 	"sync"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type App struct {
 	mu                  sync.Mutex
-	ctx                 context.Context
+	app                 *application.App
 	loginState          string
 	oauthServer         *http.Server
 	session             Session
@@ -33,11 +33,10 @@ func NewApp() *App {
 	path, _ := dataPath("settings.json")
 	return &App{settings: readSettings(path), hold: holdState{blocked: true}}
 }
-func (a *App) startup(ctx context.Context)  { a.ctx = ctx }
-func (a *App) shutdown(ctx context.Context) { _ = a.SetShortcutActive(false); a.stopOAuth() }
+func (a *App) ServiceShutdown() error { _ = a.SetShortcutActive(false); a.stopOAuth(); return nil }
 func (a *App) emit(event string, value any) {
-	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, event, value)
+	if a.app != nil {
+		a.app.Event.Emit(event, value)
 	}
 }
 func (a *App) GetShortcutSettings() Settings {

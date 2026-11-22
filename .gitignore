@@ -1,11 +1,14 @@
-/build/bin/
+/bin/
+/target/
+/.task/
+/.wails/
 /frontend/node_modules/
 /frontend/.dependency-cache/
 .publish-repository.ps1
 /frontend/dist/
-/frontend/wailsjs/
 /release/
 .env
 *session*.json
 settings.json
 .DS_Store
+__pycache__/

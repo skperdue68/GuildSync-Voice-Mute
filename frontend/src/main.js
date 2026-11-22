@@ -1,4 +1,6 @@
 import {io} from 'socket.io-client';
+import {Events} from '@wailsio/runtime';
+import * as backend from '../bindings/github.com/skperdue68/GuildSync-Voice-Mute/app.js';
 import {createVoiceSession} from './voice-session.js';
 import {createShortcutCapture} from './shortcut-capture.js';
 import {createAuthCoordinator,canEnableVoiceSession} from './auth-state.js';
@@ -6,7 +8,7 @@ import './style.css';
 import {createShortcutActivation} from './shortcut-activation.js';
 const activation=createShortcutActivation();
 let availability={available:true,reason:''};
-const api=()=>window.go.main.App;
+const api=()=>backend;
 const auth=createAuthCoordinator();
 let session=null,socket=null,settings={enabled:false,shortcut:'Ctrl+M'},capturing=false,busy=false;
 document.querySelector('#app').innerHTML=`<h1>GuildSync Voice Mute</h1><p id="appVersion" class="hint"></p><p class="intro">Hold your shortcut to mute lower-ranked members in your Discord voice channel.</p><section><p id="account">Not signed in</p><div class="buttons"><button id="login">Sign in with Discord</button><button id="logout" hidden>Sign out</button></div></section><section><label class="toggle"><input type="checkbox" id="enabled"> Enable global shortcut</label><p>Shortcut: <strong id="shortcut">Ctrl+M</strong></p><div class="buttons"><button id="capture">Set shortcut</button><button id="default" class="secondary">Return to Default</button></div><p id="macPermissions" class="hint" hidden>On Mac, enabling mute requests Input Monitoring. Allow GuildSync Voice Mute in System Settings → Privacy &amp; Security → Input Monitoring, then quit and reopen this app. On macOS 12, use System Preferences → Security &amp; Privacy → Privacy → Input Monitoring. This permission is optional; leave mute disabled if you do not want to grant it.</p><p class="hint" id="captureHelp">Press one or more keys, then release all keys to save. Escape cancels.</p></section><p id="availability" role="status"></p><p id="status" role="status" aria-live="polite">Starting…</p><p class="hint">Moderator mutes are preserved. Equal and higher ranks are protected. Release the shortcut to end your mute request.</p>`;
@@ -34,10 +36,10 @@ const shortcutCapture=createShortcutCapture({
 window.addEventListener('keydown',event=>shortcutCapture.keydown(event));
 window.addEventListener('keyup',event=>shortcutCapture.keyup(event));
 window.addEventListener('blur',()=>shortcutCapture.cancel());
-window.runtime.EventsOn('voice-shortcut-edge',pressed=>controller.onEdge(pressed));
-window.runtime.EventsOn('login-complete',s=>connect(s).catch(status));
-window.runtime.EventsOn('login-error',status);
-window.runtime.EventsOn('shortcut-error',message=>{activation.fail();controller.stop();api().SetShortcutActive(false).catch(()=>{});status(message);});
+Events.On('voice-shortcut-edge',event=>controller.onEdge(event.data));
+Events.On('login-complete',event=>connect(event.data).catch(status));
+Events.On('login-error',event=>status(event.data));
+Events.On('shortcut-error',event=>{activation.fail();controller.stop();api().SetShortcutActive(false).catch(()=>{});status(event.data);});
 window.addEventListener('beforeunload',()=>{controller.stop();socket?.disconnect();});
 // Revalidate saved accounts while running. Socket-side checks remain authoritative for every request.
 let verifying=false;

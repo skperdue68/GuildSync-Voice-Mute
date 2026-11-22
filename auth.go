@@ -16,8 +16,6 @@ import (
 	"net/url"
 	"os"
 	"time"
-
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const backendURL = "https://guildsync.perdues.me"
@@ -138,7 +136,9 @@ func (a *App) StartDiscordLogin() error {
 	// Bound abandoned login listeners; do not close a later login's listener.
 	go func() { time.Sleep(5 * time.Minute); a.stopOAuthServer(server) }()
 	params := url.Values{"response_type": {"code"}, "client_id": {discordClientID}, "redirect_uri": {redirectURI}, "scope": {"identify"}, "state": {state}, "prompt": {"consent"}}
-	runtime.BrowserOpenURL(a.ctx, "https://discord.com/oauth2/authorize?"+params.Encode())
+	if a.app != nil {
+		_ = a.app.Browser.OpenURL("https://discord.com/oauth2/authorize?" + params.Encode())
+	}
 	return nil
 }
 func (a *App) stopOAuthServer(server *http.Server) {

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=GuildSync Voice Mute
+Comment=GuildSync voice-channel mute companion
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/GuildSync-Voice-Mute %u
+Terminal=false
+Type=Application
+Icon=GuildSync-Voice-Mute
+Categories=Utility;
+StartupWMClass=GuildSync-Voice-Mute
+
+ 
