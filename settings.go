@@ -9,12 +9,27 @@ import (
 	"strings"
 )
 
+const (
+	defaultShortcut       = "Ctrl+M"
+	defaultTimeoutSeconds = 10
+	minTimeoutSeconds     = 3
+	maxTimeoutSeconds     = 120
+)
+
+// Settings is the persisted shortcut configuration.
+//
+// Muting is press-to-toggle with an automatic end: Shortcut mutes, and pressing
+// it again restarts the countdown instead of unmuting. Every mute ends on its
+// own after TimeoutSeconds, so a forgotten mute cannot leave a channel silenced.
 type Settings struct {
-	Enabled  bool   `json:"enabled"`
-	Shortcut string `json:"shortcut"`
+	Enabled        bool   `json:"enabled"`
+	Shortcut       string `json:"shortcut"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
 }
+
+// Shortcut is a system-wide accelerator: optional Ctrl, Alt or Shift followed by
+// exactly one ordinary key.
 type Shortcut struct {
-	Keys  []int
 	Label string
 }
 
@@ -23,8 +38,13 @@ func parseShortcut(input string) (Shortcut, error) {
 	codes := map[string]int{"CTRL": 17, "ALT": 18, "SHIFT": 16, "SPACE": 32, "TAB": 9, "ENTER": 13, "BACKSPACE": 8, "DELETE": 46, "INSERT": 45, "HOME": 36, "END": 35, "PAGEUP": 33, "PAGEDOWN": 34, "LEFT": 37, "UP": 38, "RIGHT": 39, "DOWN": 40}
 	labels := map[string]string{"CTRL": "Ctrl", "ALT": "Alt", "SHIFT": "Shift", "SPACE": "Space", "TAB": "Tab", "ENTER": "Enter", "BACKSPACE": "Backspace", "DELETE": "Delete", "INSERT": "Insert", "HOME": "Home", "END": "End", "PAGEUP": "PageUp", "PAGEDOWN": "PageDown", "LEFT": "Left", "UP": "Up", "RIGHT": "Right", "DOWN": "Down"}
 	seen := map[string]bool{}
+	ordinaryKeys := 0
+	keys := []int{}
 	for _, part := range strings.Split(strings.ToUpper(strings.TrimSpace(input)), "+") {
 		key := strings.TrimSpace(part)
+		if key == "" {
+			continue
+		}
 		if seen[key] {
 			return result, fmt.Errorf("duplicate shortcut key")
 		}
@@ -39,13 +59,23 @@ func parseShortcut(input string) (Shortcut, error) {
 			}
 		}
 		if code == 0 {
-			return result, fmt.Errorf("use one or more letters, numbers, F1–F12, Ctrl, Alt, Shift, or supported navigation keys")
+			return result, fmt.Errorf("use letters, numbers, F1–F12, Ctrl, Alt, Shift, or supported navigation keys")
 		}
-		result.Keys = append(result.Keys, code)
+		if code != 17 && code != 18 && code != 16 {
+			ordinaryKeys++
+		}
+		keys = append(keys, code)
+	}
+	if ordinaryKeys == 0 {
+		return result, fmt.Errorf("include one key in addition to Ctrl, Alt or Shift")
+	}
+	if ordinaryKeys > 1 {
+		return result, fmt.Errorf("use one key with optional Ctrl, Alt or Shift")
 	}
 	if ((seen["ALT"] || seen["CTRL"]) && seen["F4"]) || (seen["ALT"] && seen["TAB"]) || (seen["CTRL"] && seen["ALT"] && seen["DELETE"]) {
 		return result, fmt.Errorf("reserved system shortcut")
 	}
+	// Accelerators are written modifier-first, so keep the label canonical.
 	order := func(code int) int {
 		switch code {
 		case 17:
@@ -57,9 +87,9 @@ func parseShortcut(input string) (Shortcut, error) {
 		}
 		return code
 	}
-	sort.Slice(result.Keys, func(i, j int) bool { return order(result.Keys[i]) < order(result.Keys[j]) })
+	sort.Slice(keys, func(i, j int) bool { return order(keys[i]) < order(keys[j]) })
 	canonical := []string{}
-	for _, code := range result.Keys {
+	for _, code := range keys {
 		label := ""
 		for key, value := range codes {
 			if value == code {
@@ -78,12 +108,28 @@ func parseShortcut(input string) (Shortcut, error) {
 	result.Label = strings.Join(canonical, "+")
 	return result, nil
 }
+
+// clampTimeoutSeconds keeps a stored or submitted duration inside the range the
+// settings UI advertises.
+func clampTimeoutSeconds(seconds int) int {
+	if seconds <= 0 {
+		return defaultTimeoutSeconds
+	}
+	if seconds < minTimeoutSeconds {
+		return minTimeoutSeconds
+	}
+	if seconds > maxTimeoutSeconds {
+		return maxTimeoutSeconds
+	}
+	return seconds
+}
+
 func dataPath(name string) (string, error) {
 	root, err := os.UserConfigDir()
 	return filepath.Join(root, "GuildSync-Voice-Mute", name), err
 }
 func readSettings(path string) Settings {
-	fallback := Settings{Shortcut: "Ctrl+M"}
+	fallback := Settings{Shortcut: defaultShortcut, TimeoutSeconds: defaultTimeoutSeconds}
 	var s Settings
 	data, err := os.ReadFile(path)
 	if err != nil || json.Unmarshal(data, &s) != nil {
@@ -94,6 +140,7 @@ func readSettings(path string) Settings {
 		return fallback
 	}
 	s.Shortcut = parsed.Label
+	s.TimeoutSeconds = clampTimeoutSeconds(s.TimeoutSeconds)
 	return s
 }
 func writeJSON(path string, value any) error {
@@ -124,30 +171,4 @@ func writeJSON(path string, value any) error {
 		return closeErr
 	}
 	return os.Rename(name, path)
-}
-
-type holdState struct{ held, blocked bool }
-
-func (s *holdState) update(down, allowed bool) string {
-	if !down {
-		s.blocked = false
-		if s.held {
-			s.held = false
-			return "released"
-		}
-		return ""
-	}
-	if !allowed {
-		s.blocked = true
-		if s.held {
-			s.held = false
-			return "released"
-		}
-		return ""
-	}
-	if !s.held && !s.blocked {
-		s.held = true
-		return "pressed"
-	}
-	return ""
 }

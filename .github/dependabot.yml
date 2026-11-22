@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      wails:
+        patterns:
+          - github.com/wailsapp/*
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly

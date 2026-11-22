@@ -12,7 +12,7 @@
         <key>CFBundleVersion</key>
             <string>1.0.0</string>
         <key>CFBundleGetInfoString</key>
-            <string>Hold a shortcut to request temporary mutes in a Discord voice channel.</string>
+            <string>Press a shortcut to request temporary mutes in a Discord voice channel.</string>
         <key>CFBundleShortVersionString</key>
             <string>1.0.0</string>
         <key>CFBundleIconFile</key>

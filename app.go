@@ -1,39 +1,54 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type App struct {
-	mu                  sync.Mutex
-	app                 *application.App
-	loginState          string
-	oauthServer         *http.Server
-	session             Session
-	authGeneration      uint64
-	sessionPath         string
-	verifySession       func(Session) error
+	mu             sync.Mutex
+	app            *application.App
+	window         *application.WebviewWindow
+	tray           *application.SystemTray
+	trayStatus     *application.MenuItem
+	quitting       bool
+	updateURL      string
+	loginState     string
+	oauthServer    *http.Server
+	session        Session
+	authGeneration uint64
+	sessionPath    string
+	verifySession  func(Session) error
+
 	shortcutMu          sync.Mutex
 	settings            Settings
-	stopListener        func()
-	hold                holdState
 	active              bool
-	listenerGeneration  uint64
-	emitEdge            func(bool)
+	muted               bool
+	registered          string
+	stopTimer           func()
+	timerGeneration     uint64
 	shortcutUnavailable error
-	startListener       func(Shortcut, func(bool), func(error)) (func(), error)
+	unavailableShortcut string
+	registerShortcut    func(string, func()) error
+	unregisterShortcut  func(string) error
+	scheduleUnmute      func(time.Duration, func()) func()
+	emitEdge            func(bool)
+	emitStatus          func(string)
 }
 
 func NewApp() *App {
 	path, _ := dataPath("settings.json")
-	return &App{settings: readSettings(path), hold: holdState{blocked: true}}
+	return &App{settings: readSettings(path)}
 }
-func (a *App) ServiceShutdown() error { _ = a.SetShortcutActive(false); a.stopOAuth(); return nil }
+func (a *App) ServiceShutdown() error {
+	_ = a.SetShortcutActive(false)
+	a.stopTray()
+	a.stopOAuth()
+	return nil
+}
 func (a *App) emit(event string, value any) {
 	if a.app != nil {
 		a.app.Event.Emit(event, value)
@@ -44,111 +59,29 @@ func (a *App) GetShortcutSettings() Settings {
 	defer a.shortcutMu.Unlock()
 	return a.settings
 }
+
+// SetShortcutSettings validates and persists the shortcut configuration. It
+// stops the running shortcut first, so the caller must reactivate it (the
+// frontend does) for a new key or duration to take effect immediately.
 func (a *App) SetShortcutSettings(s Settings) error {
 	parsed, err := parseShortcut(s.Shortcut)
 	if err != nil {
 		return err
 	}
 	s.Shortcut = parsed.Label
-	if err = a.SetShortcutActive(false); err != nil {
+	s.TimeoutSeconds = clampTimeoutSeconds(s.TimeoutSeconds)
+	if err := a.SetShortcutActive(false); err != nil {
 		return err
 	}
 	path, err := dataPath("settings.json")
 	if err != nil {
 		return err
 	}
-	if err = writeJSON(path, s); err != nil {
+	if err := writeJSON(path, s); err != nil {
 		return err
 	}
 	a.shortcutMu.Lock()
 	a.settings = s
 	a.shortcutMu.Unlock()
 	return nil
-}
-func (a *App) SetShortcutActive(active bool) error {
-	a.shortcutMu.Lock()
-	a.listenerGeneration++
-	generation := a.listenerGeneration
-	if a.stopListener != nil {
-		a.stopListener()
-		a.stopListener = nil
-	}
-	a.active = false
-	if state := a.hold.update(true, false); state != "" {
-		a.emit("voice-shortcut-edge", false)
-	}
-	if !active {
-		a.shortcutMu.Unlock()
-		return nil
-	}
-	settings := a.settings
-	if a.shortcutUnavailable != nil {
-		err := a.shortcutUnavailable
-		a.shortcutMu.Unlock()
-		return err
-	}
-	a.shortcutMu.Unlock()
-	if !settings.Enabled {
-		return nil
-	}
-	a.mu.Lock()
-	s := a.session
-	a.mu.Unlock()
-	if !s.LoggedIn || !s.Allowed || s.Token == "" {
-		return fmt.Errorf("Sign in with Discord to enable the shortcut.")
-	}
-	shortcut, err := parseShortcut(settings.Shortcut)
-	if err != nil {
-		return err
-	}
-	start := a.startListener
-	if start == nil {
-		start = startShortcut
-	}
-	stop, err := start(shortcut, func(down bool) { a.observeEdge(generation, down) }, func(err error) {
-		a.shortcutMu.Lock()
-		defer a.shortcutMu.Unlock()
-		if generation != a.listenerGeneration {
-			return
-		}
-		a.active = false
-		a.hold.update(true, false)
-		a.emit("shortcut-error", err.Error())
-	})
-	if err != nil {
-		var unavailable *shortcutUnavailableError
-		if errors.As(err, &unavailable) {
-			a.shortcutMu.Lock()
-			a.shortcutUnavailable = err
-			a.shortcutMu.Unlock()
-		}
-		return err
-	}
-	a.shortcutMu.Lock()
-	if generation != a.listenerGeneration {
-		a.shortcutMu.Unlock()
-		stop()
-		return nil
-	}
-	a.stopListener = stop
-	a.active = true
-	a.shortcutMu.Unlock()
-	return nil
-}
-
-func (a *App) observeEdge(generation uint64, down bool) {
-	a.shortcutMu.Lock()
-	defer a.shortcutMu.Unlock()
-	if generation != a.listenerGeneration {
-		return
-	}
-	wasBlocked := a.hold.blocked
-	state := a.hold.update(down, a.active)
-	if state != "" || (!down && wasBlocked) {
-		if a.emitEdge != nil {
-			a.emitEdge(state == "pressed")
-		} else {
-			a.emit("voice-shortcut-edge", state == "pressed")
-		}
-	}
 }

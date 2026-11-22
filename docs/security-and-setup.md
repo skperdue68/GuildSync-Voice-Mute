@@ -6,7 +6,9 @@ Saved sessions are revalidated on startup and every 30 seconds while the applica
 
 Configuration/session files use restrictive file permissions on Unix and live in the current user's configuration directory. Windows protection follows that directory's account ACLs. The bearer token is stored in a local file, as in GuildSync; this version does not use a platform credential vault. Sign out clears it locally even if remote logout cannot be reached. A server-side token may remain valid until its normal expiry if remote logout fails.
 
-The client sends `guildsync:voice-mute-hotkey` with only state and session ID. The server derives identity and the bot derives the channel. Heartbeats run every two seconds during a hold. Release, logout, disconnect and shutdown cancel them. Server session expiry after eight seconds covers undelivered release events. Reconnection never restarts a request until a physical release and new press.
+The embedded frontend is served with a content security policy: scripts and styles must come from the bundle (inline allowed because Wails injects its runtime that way), network access is limited to the bundle origin and `guildsync.perdues.me`, and objects, frames and form submissions are refused. The update check sends no account data to GitHub and only opens release pages under the project's own repository; any other URL is rejected before the browser opens.
+
+The client sends `guildsync:voice-mute-hotkey` with only state and session ID. The server derives identity and the bot derives the channel. Heartbeats run every two seconds while a mute is active, and the local auto-unmute timer sends the release. Logout, disconnect and shutdown cancel them. Server session expiry after eight seconds covers an undelivered release event. Reconnection never restarts a request without a new shortcut press.
 
 The bot owns durable moderation/temporary-mute state and recovery. The companion neither decides who to unmute nor bypasses moderator mutes. An unavailable backend or bot fails closed.
 

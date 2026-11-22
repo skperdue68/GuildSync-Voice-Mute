@@ -11,5 +11,6 @@ export {
     Session,
     Settings,
     ShortcutAvailability,
+    UpdateInfo,
     User
 } from "./models.js";

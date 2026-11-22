@@ -11,6 +11,17 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
+ * CheckForUpdate asks GitHub for the newest published release. It never downloads
+ * or executes anything; the UI offers the release page instead.
+ * @returns {$CancellablePromise<$models.UpdateInfo>}
+ */
+export function CheckForUpdate() {
+    return $Call.ByID(2347956003).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<string>}
  */
 export function GetAppVersion() {
@@ -18,18 +29,11 @@ export function GetAppVersion() {
 }
 
 /**
- * @returns {$CancellablePromise<string>}
- */
-export function GetPlatform() {
-    return $Call.ByID(3709063056);
-}
-
-/**
  * @returns {$CancellablePromise<$models.Session>}
  */
 export function GetSession() {
     return $Call.ByID(458092729).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType0($result);
+        return $$createType1($result);
     }));
 }
 
@@ -38,7 +42,7 @@ export function GetSession() {
  */
 export function GetShortcutAvailability() {
     return $Call.ByID(2012570670).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType1($result);
+        return $$createType2($result);
     }));
 }
 
@@ -47,8 +51,22 @@ export function GetShortcutAvailability() {
  */
 export function GetShortcutSettings() {
     return $Call.ByID(219397664).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType2($result);
+        return $$createType3($result);
     }));
+}
+
+/**
+ * @returns {$CancellablePromise<boolean>}
+ */
+export function GetStartAtLogin() {
+    return $Call.ByID(1682485285);
+}
+
+/**
+ * @returns {$CancellablePromise<void>}
+ */
+export function HideWindow() {
+    return $Call.ByID(542966029);
 }
 
 /**
@@ -59,6 +77,27 @@ export function Logout() {
 }
 
 /**
+ * OpenReleasePage opens a GuildSync release page in the system browser, refusing
+ * any other URL so a crafted release payload cannot send the browser elsewhere.
+ * @param {string} url
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenReleasePage(url) {
+    return $Call.ByID(815420409, url);
+}
+
+/**
+ * Quit leaves through the tray menu or the title bar without the close-to-tray
+ * hook canceling the shutdown.
+ * @returns {$CancellablePromise<void>}
+ */
+export function Quit() {
+    return $Call.ByID(3181047470);
+}
+
+/**
+ * SetShortcutActive arms or disarms the shortcut. Turning it off always ends an
+ * active mute so the server is told to unmute immediately.
  * @param {boolean} active
  * @returns {$CancellablePromise<void>}
  */
@@ -67,11 +106,39 @@ export function SetShortcutActive(active) {
 }
 
 /**
+ * SetShortcutSettings validates and persists the shortcut configuration. It
+ * stops the running shortcut first, so the caller must reactivate it (the
+ * frontend does) for a new key or duration to take effect immediately.
  * @param {$models.Settings} s
  * @returns {$CancellablePromise<void>}
  */
 export function SetShortcutSettings(s) {
     return $Call.ByID(434931092, s);
+}
+
+/**
+ * @param {boolean} enabled
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetStartAtLogin(enabled) {
+    return $Call.ByID(2853811945, enabled);
+}
+
+/**
+ * @returns {$CancellablePromise<void>}
+ */
+export function ShowWindow() {
+    return $Call.ByID(31117496);
+}
+
+/**
+ * Start-at-login is registered with the desktop itself, so the operating system
+ * entry is the source of truth rather than a settings field that can drift from
+ * it. The platform files implement the three helpers below.
+ * @returns {$CancellablePromise<boolean>}
+ */
+export function StartAtLoginSupported() {
+    return $Call.ByID(3035556371);
 }
 
 /**
@@ -82,6 +149,7 @@ export function StartDiscordLogin() {
 }
 
 // Private type creation functions
-const $$createType0 = $models.Session.createFrom;
-const $$createType1 = $models.ShortcutAvailability.createFrom;
-const $$createType2 = $models.Settings.createFrom;
+const $$createType0 = $models.UpdateInfo.createFrom;
+const $$createType1 = $models.Session.createFrom;
+const $$createType2 = $models.ShortcutAvailability.createFrom;
+const $$createType3 = $models.Settings.createFrom;

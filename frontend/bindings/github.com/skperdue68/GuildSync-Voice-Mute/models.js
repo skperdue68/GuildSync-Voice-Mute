@@ -91,6 +91,13 @@ export class Session {
     }
 }
 
+/**
+ * Settings is the persisted shortcut configuration.
+ * 
+ * Muting is press-to-toggle with an automatic end: Shortcut mutes, and pressing
+ * it again restarts the countdown instead of unmuting. Every mute ends on its
+ * own after TimeoutSeconds, so a forgotten mute cannot leave a channel silenced.
+ */
 export class Settings {
     /**
      * Creates a new Settings instance.
@@ -110,6 +117,13 @@ export class Settings {
              * @type {string}
              */
             this["shortcut"] = "";
+        }
+        if (!("timeout_seconds" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["timeout_seconds"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -158,6 +172,74 @@ export class ShortcutAvailability {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new ShortcutAvailability(/** @type {Partial<ShortcutAvailability>} */($$parsedSource));
+    }
+}
+
+/**
+ * UpdateInfo is the result of comparing the running build with the newest
+ * published release. Releases are unsigned zips, so the app opens the release
+ * page instead of downloading and running an installer itself.
+ */
+export class UpdateInfo {
+    /**
+     * Creates a new UpdateInfo instance.
+     * @param {Partial<UpdateInfo>} [$$source = {}] - The source object to create the UpdateInfo.
+     */
+    constructor($$source = {}) {
+        if (!("current" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["current"] = "";
+        }
+        if (!("latest" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["latest"] = "";
+        }
+        if (!("available" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["available"] = false;
+        }
+        if (!("page_url" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["page_url"] = "";
+        }
+        if (!("notes" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["notes"] = "";
+        }
+        if (!("message" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["message"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new UpdateInfo instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {UpdateInfo}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new UpdateInfo(/** @type {Partial<UpdateInfo>} */($$parsedSource));
     }
 }
 

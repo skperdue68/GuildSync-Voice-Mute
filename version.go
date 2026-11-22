@@ -2,7 +2,6 @@ package main
 
 import (
 	_ "embed"
-	"runtime"
 	"strings"
 )
 
@@ -32,7 +31,12 @@ func productVersion() string {
 		if !strings.HasPrefix(trimmed, "version:") {
 			continue
 		}
-		value := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "version:")), `"'`)
+		value := strings.TrimSpace(strings.TrimPrefix(trimmed, "version:"))
+		// The config line may carry a trailing comment.
+		if cut := strings.Index(value, "#"); cut >= 0 {
+			value = strings.TrimSpace(value[:cut])
+		}
+		value = strings.Trim(value, `"'`)
 		if value != "" {
 			return value
 		}
@@ -40,4 +44,3 @@ func productVersion() string {
 	return "unknown"
 }
 func (a *App) GetAppVersion() string { return productVersion() }
-func (a *App) GetPlatform() string   { return runtime.GOOS }

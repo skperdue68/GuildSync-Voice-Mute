@@ -85,7 +85,7 @@ func (a *App) StartDiscordLogin() error {
 			w.WriteHeader(status)
 			fmt.Fprintf(w, "<h1>GuildSync Voice Mute</h1><p>%s</p><p>You can close this tab and return to the application.</p>", html.EscapeString(message))
 			if status != 200 {
-				a.emit("login-error", message)
+				a.emit(eventLoginError, message)
 			}
 			go a.stopOAuthServer(server)
 		}
@@ -125,12 +125,12 @@ func (a *App) StartDiscordLogin() error {
 		a.session = s
 		a.authGeneration++
 		a.mu.Unlock()
-		a.emit("login-complete", s)
+		a.emit(eventLoginComplete, s)
 		finish("Login complete.", 200)
 	})
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			a.emit("login-error", "Local login callback failed.")
+			a.emit(eventLoginError, "Local login callback failed.")
 		}
 	}()
 	// Bound abandoned login listeners; do not close a later login's listener.

@@ -3,10 +3,13 @@ on:
   release:
     types: [published]
   pull_request:
+  # A manual dispatch builds every platform and uploads the archives without
+  # publishing anything; only a published release runs the release job.
+  workflow_dispatch:
 permissions:
   contents: read
 env:
-  GO_VERSION: '1.26.x'
+  GO_VERSION: '1.27.x'
   WAILS_VERSION: 'v3.1.0'
 jobs:
   checks:
@@ -20,6 +23,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Check product metadata is consistent
+        run: python tools/check_product_metadata.py
       - run: python -m unittest discover -s tools -p '*_test.py'
       - run: npm ci && npm test
         working-directory: frontend
@@ -63,7 +68,7 @@ jobs:
           go build ./...
           go test ./...
   build:
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -86,10 +91,15 @@ jobs:
         with:
           python-version: '3.12'
       - name: Stamp release version
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         shell: bash
-        run: python tools/set-release-version.py "$RELEASE_TAG"
+        run: |
+          # A release stamps its tag. A dispatch stamps the committed version,
+          # which exercises the stamping path without inventing a version.
+          if [ -n "${{ github.event.release.tag_name }}" ]; then
+            python tools/set-release-version.py "${{ github.event.release.tag_name }}"
+          else
+            python tools/set-release-version.py "v$(python tools/check_product_metadata.py)"
+          fi
       - uses: actions/setup-go@v5
         with:
           go-version: '${{ env.GO_VERSION }}'
@@ -124,36 +134,20 @@ jobs:
           else
             wails3 build
           fi
-      - name: Package and validate version
+      - name: Ad-hoc sign macOS bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: wails3 task darwin:codesign
+      - name: Package release artifacts
         shell: bash
         env:
           PLATFORM_NAME: ${{ matrix.platform }}
         run: |
-          python - <<'PY'
-          import json, os, pathlib, re, zipfile
-          config = pathlib.Path('build/config.yml').read_text()
-          match = re.search(r'(?m)^  version:\s*"([^"]+)"', config)
-          version = match.group(1) if match else ''
-          frontend_version = json.loads(pathlib.Path('frontend/package.json').read_text())['version']
-          if not re.fullmatch(r'\d+\.\d+\.\d+', version) or version != frontend_version:
-              raise SystemExit('App and frontend release versions must match (MAJOR.MINOR.PATCH).')
-          if os.environ['GITHUB_REF_NAME'].removeprefix('v') != version:
-              raise SystemExit('Release tag must match the app version.')
-          windows = json.loads(pathlib.Path('build/windows/info.json').read_text())
-          if windows['fixed']['product_version'] != version:
-              raise SystemExit('Windows assembly metadata was not stamped.')
-          plist = pathlib.Path('build/darwin/Info.plist').read_text()
-          if f'<string>{version}</string>' not in plist:
-              raise SystemExit('macOS bundle metadata was not stamped.')
-          out = pathlib.Path('release'); out.mkdir(exist_ok=True)
-          files = list(pathlib.Path('bin').rglob('*'))
-          if not any(p.is_file() for p in files): raise SystemExit('No executable was built.')
-          archive = out / f'GuildSync-Voice-Mute-{version}-{os.environ["PLATFORM_NAME"]}.zip'
-          with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as z:
-              for p in files:
-                  if p.is_file(): z.write(p, p.relative_to('bin'))
-              z.write('README.md'); z.write('docs/platform-support.md')
-          PY
+          VERSION="$(python tools/check_product_metadata.py)"
+          if [ -n "${{ github.event.release.tag_name }}" ]; then
+            python tools/check_product_metadata.py --expected "${{ github.event.release.tag_name }}"
+          fi
+          python tools/package_release.py "$PLATFORM_NAME" --version "v$VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: GuildSync-Voice-Mute-${{ matrix.platform }}

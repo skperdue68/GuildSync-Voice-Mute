@@ -53,6 +53,16 @@ tasks:
       - wails3 tool lipo -output "{{.BIN_DIR}}/{{.APP_NAME}}" -input "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" -input "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
       - rm -f "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
 
+  codesign:
+    summary: Ad-hoc signs the built bundle so macOS sees a consistent app
+    cmds:
+      - |
+        set -e
+        for app in "{{.BIN_DIR}}"/*.app; do
+          [ -d "$app" ] || continue
+          /usr/bin/codesign --force --deep --sign - "$app"
+        done
+
   run:
     summary: Runs the built macOS binary
     cmds:
