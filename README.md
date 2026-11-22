@@ -6,7 +6,7 @@ A small desktop companion for GuildSync's Discord voice-channel mute feature. It
 
 1. Open the application and choose **Sign in with Discord**. Complete login in your browser. You do not need a GuildSync account or GuildSync approval. You must belong to the configured Discord server and have a role allowed by its voice-mute policy.
 2. Choose **Set shortcut**, then press one key, optionally with Ctrl, Alt or Shift, and release it to save. Examples: `F8`, `Space`, `Ctrl+Shift+M`, or `Alt+F2`. Letters, numbers, F1–F12, Ctrl/Alt/Shift, and navigation keys are supported. Escape cancels. **Return to Default** restores Ctrl+M, the 10-second auto-unmute and disables the shortcut.
-3. Enable the global shortcut and join a Discord voice channel. Press the shortcut to mute eligible lower-ranked members in that channel for the configured time (10 seconds by default; set 3–120 seconds in **Auto-unmute after**). Pressing it again restarts the countdown instead of unmuting, and every mute ends on its own.
+3. Enable the mute shortcut and join a Discord voice channel. Press the shortcut to mute eligible lower-ranked members in that channel for the configured time (10 seconds by default; set 3–120 seconds in **Auto-unmute after**). Pressing it again restarts the countdown instead of unmuting, and every mute ends on its own.
 
 Moderator mutes are preserved. Equal/higher and unknown guild ranks, bots and the server owner are protected by the existing bot. Changing channels ends the request; it does not follow you into another channel. The auto-unmute timer, disconnect, logout, shortcut changes and app shutdown stop the request. On reconnect, press the shortcut again.
 
