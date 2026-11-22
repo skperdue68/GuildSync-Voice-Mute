@@ -39,6 +39,20 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install Wails Linux dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
+      - name: Install Wails 3 CLI
+        shell: bash
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+      - name: Check generated bindings are current
+        shell: bash
+        run: |
+          # Reuse the build task so the flags cannot drift from a normal build.
+          wails3 task -f common:generate:bindings
+          if [ -n "$(git status --porcelain -- frontend/bindings)" ]; then
+            git --no-pager diff -- frontend/bindings
+            git status --short -- frontend/bindings
+            echo "::error::frontend/bindings is stale. Run 'wails3 task common:generate:bindings' and commit the result."
+            exit 1
+          fi
       - name: Build frontend bundle
         working-directory: frontend
         run: |
