@@ -16,8 +16,6 @@ import (
 	"net/url"
 	"os"
 	"time"
-
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const backendURL = "https://guildsync.perdues.me"
@@ -87,7 +85,7 @@ func (a *App) StartDiscordLogin() error {
 			w.WriteHeader(status)
 			fmt.Fprintf(w, "<h1>GuildSync Voice Mute</h1><p>%s</p><p>You can close this tab and return to the application.</p>", html.EscapeString(message))
 			if status != 200 {
-				a.emit("login-error", message)
+				a.emit(eventLoginError, message)
 			}
 			go a.stopOAuthServer(server)
 		}
@@ -127,18 +125,20 @@ func (a *App) StartDiscordLogin() error {
 		a.session = s
 		a.authGeneration++
 		a.mu.Unlock()
-		a.emit("login-complete", s)
+		a.emit(eventLoginComplete, s)
 		finish("Login complete.", 200)
 	})
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			a.emit("login-error", "Local login callback failed.")
+			a.emit(eventLoginError, "Local login callback failed.")
 		}
 	}()
 	// Bound abandoned login listeners; do not close a later login's listener.
 	go func() { time.Sleep(5 * time.Minute); a.stopOAuthServer(server) }()
 	params := url.Values{"response_type": {"code"}, "client_id": {discordClientID}, "redirect_uri": {redirectURI}, "scope": {"identify"}, "state": {state}, "prompt": {"consent"}}
-	runtime.BrowserOpenURL(a.ctx, "https://discord.com/oauth2/authorize?"+params.Encode())
+	if a.app != nil {
+		_ = a.app.Browser.OpenURL("https://discord.com/oauth2/authorize?" + params.Encode())
+	}
 	return nil
 }
 func (a *App) stopOAuthServer(server *http.Server) {

@@ -2,23 +2,45 @@ package main
 
 import (
 	_ "embed"
-	"encoding/json"
-	"runtime"
+	"strings"
 )
 
-//go:embed wails.json
+// build/config.yml is the single source of truth for the product metadata that
+// both the Wails CLI and this binary read.
+//
+//go:embed build/config.yml
 var productMetadata []byte
 
+// productVersion reads info.version without pulling a YAML dependency into the
+// binary. The top-level `version: '3'` is the config schema version, so the
+// search starts after the info block instead of matching the first "version:".
 func productVersion() string {
-	var metadata struct {
-		Info struct {
-			Version string `json:"productVersion"`
-		} `json:"info"`
-	}
-	if json.Unmarshal(productMetadata, &metadata) != nil || metadata.Info.Version == "" {
+	text := string(productMetadata)
+	start := strings.Index(text, "\ninfo:")
+	if start < 0 {
 		return "unknown"
 	}
-	return metadata.Info.Version
+	for _, line := range strings.Split(text[start+1:], "\n")[1:] {
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if !strings.HasPrefix(line, " ") {
+			break
+		}
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "version:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(trimmed, "version:"))
+		// The config line may carry a trailing comment.
+		if cut := strings.Index(value, "#"); cut >= 0 {
+			value = strings.TrimSpace(value[:cut])
+		}
+		value = strings.Trim(value, `"'`)
+		if value != "" {
+			return value
+		}
+	}
+	return "unknown"
 }
 func (a *App) GetAppVersion() string { return productVersion() }
-func (a *App) GetPlatform() string   { return runtime.GOOS }

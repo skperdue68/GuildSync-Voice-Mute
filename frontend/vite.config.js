@@ -1,2 +1,3 @@
 import {defineConfig} from 'vite';
-export default defineConfig({build:{target:'es2020'}});
+import wails from '@wailsio/runtime/plugins/vite';
+export default defineConfig({plugins:[wails('./bindings')],build:{target:'es2020'}});

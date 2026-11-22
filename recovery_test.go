@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -28,18 +27,5 @@ func TestVerificationCannotUndoLogout(t *testing.T) {
 	}
 	if a.session.LoggedIn {
 		t.Fatal("logout overwritten")
-	}
-}
-func TestPollingFailureIsReported(t *testing.T) {
-	failed := make(chan error, 1)
-	stop := pollShortcut(func() (bool, error) { return false, errors.New("permission revoked") }, func() {}, func(bool) {}, func(err error) { failed <- err })
-	defer stop()
-	select {
-	case err := <-failed:
-		if err.Error() != "permission revoked" {
-			t.Fatal(err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("native error lost")
 	}
 }

@@ -1,32 +1,35 @@
 # Platform support and permissions
 
+The shortcut is registered with the operating system through Wails v3's global shortcut API. The app is told when the accelerator is pressed; it never reads key state, installs a keyboard hook, or suppresses key input. Because nothing depends on detecting a key release, no platform input-monitoring permission is required. Muting is press-to-toggle: one press mutes for the configured time, another press restarts the countdown, and the timer always ends the mute.
+
 ## Windows
 
-Read the global keyboard state with `GetAsyncKeyState` every 25 milliseconds. No keys are intercepted or suppressed. The initial held state is blocked until all required keys have been released. WebView2 is needed for the GUI. Secure desktops, lock screens and disconnected sessions do not provide an ordinary interactive keyboard context.
+The accelerator is registered with `RegisterHotKey`, so it works while another application has focus. No keys are intercepted or suppressed. WebView2 is needed for the GUI. Secure desktops, lock screens and disconnected sessions do not provide an interactive desktop for shortcut delivery, and a shortcut Windows already reserves fails to register with an error in the app.
 
 ## macOS
 
-Use CoreGraphics global key-state observation. Allow the application in **System Settings → Privacy & Security → Input Monitoring**, then restart and enable it again. If permission is absent, activation fails with instructions. macOS can reserve shortcuts or treat function keys as media controls; use an ordinary modifier/letter combination when necessary. The app is not signed or notarized by this project. The current macOS letter key-code mapping assumes a QWERTY layout; non-QWERTY layouts need manual verification or a function/navigation-key shortcut. Windows and X11 letter capture follows the active layout.
-
-The permission check uses Apple's [CGPreflightListenEventAccess](https://developer.apple.com/documentation/coregraphics/cgpreflightlisteneventaccess()). Native key-state observation runs outside network operations. Manual testing on macOS is required before declaring the global hold feature verified.
-
-Input Monitoring is an operating-system permission. Installation cannot grant it and this application cannot bypass it. Grant permission yourself, restart the app, and enable the shortcut.
+The accelerator is registered as a system-wide hotkey; **System Settings → Privacy & Security → Input Monitoring** and Accessibility are not needed. macOS can reserve shortcuts or treat function keys as media controls; use an ordinary modifier/letter combination when necessary. Registration failures are reported in the app. Release builds are ad-hoc signed (`codesign --sign -`) so the bundle is internally consistent, but they are not notarized: the first launch needs the usual Gatekeeper **Open Anyway** confirmation.
 
 ## Linux X11
 
-Requires an accessible X11 display and `libX11`. The listener queries key state instead of grabbing or consuming the keys. Shortcut key names are resolved against the keyboard layout when activation begins; restart/re-enable after changing your keyboard layout.
+Requires an accessible X11 display with GTK4/WebKitGTK 6.0 (`libgtk-4-dev libwebkitgtk-6.0-dev` on Ubuntu 24.04). Wails grabs the accelerator; the app no longer queries key state, so changing the keyboard layout does not require re-enabling the shortcut.
 
 ## Linux Wayland
 
-Requires a desktop implementing the [GlobalShortcuts portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.GlobalShortcuts.html). The desktop may show its own approval/binding dialog. Its actual binding is authoritative and may differ from the app's requested shortcut; check the dialog. Declining permission or a missing backend leaves activation unavailable. The app never falls back to a focused-window shortcut.
+Requires a desktop implementing the [GlobalShortcuts portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.GlobalShortcuts.html) and the appropriate `xdg-desktop-portal` backend. The desktop may show its own approval/binding dialog. Its actual binding is authoritative and may differ from the app's requested shortcut; check the dialog. Declining permission or a missing backend leaves activation unavailable. The app never falls back to a focused-window shortcut.
 
-The portal supports one ordinary key (such as F8 or M), optionally with Ctrl/Alt/Shift. Modifier-only shortcuts and multiple ordinary keys (such as M+N) cannot be activated through this API and are rejected with an explanation; these combinations work on Windows, macOS, and X11.
+The portal supports one ordinary key (such as F8 or M), optionally with Ctrl/Alt/Shift. Modifier-only shortcuts and multiple ordinary keys (such as `M+N`) are rejected with an explanation; those combinations also fail on Windows, macOS and X11, because an accelerator cannot express them.
 
-Activation and deactivation signals drive hold/release. Portal support varies by desktop; install the appropriate `xdg-desktop-portal` backend. A portal timeout or disconnect ends local activity and the bot's session expiry remains the safety fallback.
+A missing GlobalShortcuts API or inaccessible desktop session does not fail installation or application startup. The app reports the registration error, disables Enable and offers **Set shortcut** to try a different combination. A failure is remembered for the shortcut that caused it, so the desktop is not prompted again until the shortcut changes. The app does not request broader permissions to compensate for a missing API.
 
-A missing GlobalShortcuts API or inaccessible desktop session does not fail installation or application startup. The app shows **Mute is unavailable for this Linux version/session** and disables Enable after detecting the missing API. It remembers that result for the current app session; restart after changing desktop support. A declined or timed-out consent request is not automatically retried on socket reconnect. To try consent again, explicitly change/re-enable the shortcut. The app does not request broader permissions to compensate for a missing API.
+## Tray, start at login and updates
+
+A tray icon is added when the desktop exposes one. Closing the window then hides it and the shortcut keeps working; **Quit** in the tray menu exits. Where no tray host is reachable (some Wayland sessions without a StatusNotifier watcher or panel), the app skips the tray and closing the window exits, so the app can never become unreachable. The tray menu shows whether a mute is active, and macOS shows a 🔇 status label while muted.
+
+**Start at login** writes a per-user entry: the `Run` key on Windows, a LaunchAgent plist on macOS, or an XDG autostart `.desktop` file on Linux. Disabling it removes that entry; the desktop's own entry is the source of truth.
+
+**Check for updates** queries the GitHub releases API for the newest published release and compares it with the embedded version. The app does not download or execute anything: **Open download page** opens only `github.com/skperdue68/GuildSync-Voice-Mute/releases` URLs in the system browser.
 
 ## Current verification boundary
 
-Automated tests cover parser, authentication and transport lifecycle. CI is configured for native Windows, macOS and Linux builds. A live desktop/Discord integration check is still required on each target platform, particularly Wayland binding and macOS permission behavior. Do not use a build result as evidence that those checks were performed.
-
+Automated tests cover the shortcut parser, mute timer lifecycle, authentication and transport. CI is configured for native Windows, macOS and Linux builds. A live desktop/Discord integration check is still required on each target platform, particularly Wayland portal binding. Do not use a build result as evidence that those checks were performed.

@@ -3,8 +3,14 @@ on:
   release:
     types: [published]
   pull_request:
+  # A manual dispatch builds every platform and uploads the archives without
+  # publishing anything; only a published release runs the release job.
+  workflow_dispatch:
 permissions:
   contents: read
+env:
+  GO_VERSION: '1.27.x'
+  WAILS_VERSION: 'v3.1.0'
 jobs:
   checks:
     if: github.event_name == 'pull_request'
@@ -17,24 +23,65 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Check product metadata is consistent
+        run: python tools/check_product_metadata.py
       - run: python -m unittest discover -s tools -p '*_test.py'
       - run: npm ci && npm test
         working-directory: frontend
+  compile:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Wails Linux dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
+      - name: Install Wails 3 CLI
+        shell: bash
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+      - name: Check generated bindings are current
+        shell: bash
+        run: |
+          # Reuse the build task so the flags cannot drift from a normal build.
+          wails3 task -f common:generate:bindings
+          if [ -n "$(git status --porcelain -- frontend/bindings)" ]; then
+            git --no-pager diff -- frontend/bindings
+            git status --short -- frontend/bindings
+            echo "::error::frontend/bindings is stale. Run 'wails3 task common:generate:bindings' and commit the result."
+            exit 1
+          fi
+      - name: Build frontend bundle
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Compile and test
+        run: |
+          go build ./...
+          go test ./...
   build:
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             platform: Windows
-            args: ''
+            universal: 'false'
           - os: macos-latest
             platform: macOS
-            args: '-platform darwin/universal'
+            universal: 'true'
           - os: ubuntu-24.04
             platform: Linux
-            args: '-tags webkit2_41'
+            universal: 'false'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -44,13 +91,19 @@ jobs:
         with:
           python-version: '3.12'
       - name: Stamp release version
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         shell: bash
-        run: python tools/set-release-version.py "$RELEASE_TAG"
+        run: |
+          # A release stamps its tag. A dispatch stamps the committed version,
+          # which exercises the stamping path without inventing a version.
+          if [ -n "${{ github.event.release.tag_name }}" ]; then
+            python tools/set-release-version.py "${{ github.event.release.tag_name }}"
+          else
+            python tools/set-release-version.py "v$(python tools/check_product_metadata.py)"
+          fi
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23.x'
+          go-version: '${{ env.GO_VERSION }}'
+          cache-dependency-path: go.sum
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -58,9 +111,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install Linux native dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev
-      - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
+      - name: Install Wails 3 CLI
+        shell: bash
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
       - name: Build and test frontend
         working-directory: frontend
         run: |
@@ -69,34 +123,31 @@ jobs:
           npm run build
       - name: Test Go
         shell: bash
-        run: go test ${{ matrix.args == '-tags webkit2_41' && '-tags webkit2_41' || '' }} ./...
+        run: go test ./...
       - name: Build executable
         shell: bash
         env:
           MACOSX_DEPLOYMENT_TARGET: '12.0'
-        run: wails build ${{ matrix.args }}
-      - name: Package and validate version
+        run: |
+          if [[ "${{ matrix.universal }}" == "true" ]]; then
+            wails3 task darwin:build:universal
+          else
+            wails3 build
+          fi
+      - name: Ad-hoc sign macOS bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: wails3 task darwin:codesign
+      - name: Package release artifacts
         shell: bash
         env:
           PLATFORM_NAME: ${{ matrix.platform }}
         run: |
-          python - <<'PY'
-          import json, os, pathlib, re, zipfile
-          version = json.loads(pathlib.Path('wails.json').read_text())['info']['productVersion']
-          frontend_version = json.loads(pathlib.Path('frontend/package.json').read_text())['version']
-          if not re.fullmatch(r'\d+\.\d+\.\d+', version) or version != frontend_version:
-              raise SystemExit('App and frontend release versions must match (MAJOR.MINOR.PATCH).')
-          if os.environ['GITHUB_REF_NAME'].removeprefix('v') != version:
-              raise SystemExit('Release tag must match the app version.')
-          out = pathlib.Path('release'); out.mkdir(exist_ok=True)
-          files = list(pathlib.Path('build/bin').rglob('*'))
-          if not any(p.is_file() for p in files): raise SystemExit('No executable was built.')
-          archive = out / f'GuildSync-Voice-Mute-{version}-{os.environ["PLATFORM_NAME"]}.zip'
-          with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as z:
-              for p in files:
-                  if p.is_file(): z.write(p, p.relative_to('build/bin'))
-              z.write('README.md'); z.write('docs/platform-support.md')
-          PY
+          VERSION="$(python tools/check_product_metadata.py)"
+          if [ -n "${{ github.event.release.tag_name }}" ]; then
+            python tools/check_product_metadata.py --expected "${{ github.event.release.tag_name }}"
+          fi
+          python tools/package_release.py "$PLATFORM_NAME" --version "v$VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: GuildSync-Voice-Mute-${{ matrix.platform }}
@@ -118,4 +169,3 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$RELEASE_TAG" release/*.zip --repo "$GITHUB_REPOSITORY" --clobber
-
