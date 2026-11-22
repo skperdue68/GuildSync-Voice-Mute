@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -30,40 +31,32 @@ func TestCheckForUpdateFindsNewerRelease(t *testing.T) {
 			t.Error("missing user agent")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://github.com/skperdue68/GuildSync-Voice-Mute/releases/tag/v9.9.9","body":"Fixes mutes."}`))
+		w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"` + updateReleaseURL + `/tag/v9.9.9"}`))
 	}))
 	defer server.Close()
 	info, err := (&App{updateURL: server.URL}).CheckForUpdate()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.Available || info.Latest != "9.9.9" || info.PageURL == updatePageURL {
+	if !info.Available || info.PageURL != updateReleaseURL+"/tag/v9.9.9" {
 		t.Fatalf("%+v", info)
 	}
-	if info.Notes != "Fixes mutes." || info.Current != productVersion() {
-		t.Fatalf("%+v", info)
+	if !strings.Contains(info.Message, "9.9.9") {
+		t.Fatalf("message does not name the version: %+v", info)
 	}
 }
 
-func TestCheckForUpdateIgnoresSameAndPrerelease(t *testing.T) {
-	for _, body := range []string{
-		`{"tag_name":"v` + productVersion() + `","html_url":"https://github.com/skperdue68/GuildSync-Voice-Mute/releases"}`,
-		`{"tag_name":"v99.0.0","prerelease":true,"html_url":"https://github.com/skperdue68/GuildSync-Voice-Mute/releases"}`,
-	} {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(body))
-		}))
-		info, err := (&App{updateURL: server.URL}).CheckForUpdate()
-		server.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if info.Available {
-			t.Fatalf("offered %+v", info)
-		}
-		if info.Message == "" {
-			t.Fatalf("no message for %+v", info)
-		}
+func TestCheckForUpdateDoesNotOfferTheRunningVersion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"tag_name":"v` + productVersion() + `","html_url":"` + updateReleaseURL + `"}`))
+	}))
+	defer server.Close()
+	info, err := (&App{updateURL: server.URL}).CheckForUpdate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Available || info.Message == "" || info.PageURL != updateReleaseURL {
+		t.Fatalf("%+v", info)
 	}
 }
 
@@ -78,17 +71,19 @@ func TestCheckForUpdateReportsHTTPFailure(t *testing.T) {
 }
 
 func TestReleasePageIsValidated(t *testing.T) {
-	info := UpdateInfo{PageURL: "file:///etc/passwd"}
-	if usableReleasePage(info.PageURL) {
+	if usableReleasePage("file:///etc/passwd") {
 		t.Fatal("accepted a non-release URL")
+	}
+	if !usableReleasePage(updateReleaseURL) || !usableReleasePage(updateReleaseURL+"/tag/v1.0.0") {
+		t.Fatal("rejected a release URL")
+	}
+	if !strings.HasPrefix(updateAPIURL, "https://api.github.com/repos/"+updateRepo+"/") {
+		t.Fatalf("update endpoint left the repository: %s", updateAPIURL)
 	}
 	if err := (&App{}).OpenReleasePage("https://example.com/evil.zip"); err == nil {
 		t.Fatal("opened a foreign URL")
 	}
-	if !usableReleasePage(updatePageURL) || !usableReleasePage(updatePagePrefix+"/tag/v1.0.0") {
-		t.Fatal("rejected a release URL")
-	}
-	if err := (&App{}).OpenReleasePage(updatePageURL); err == nil {
+	if err := (&App{}).OpenReleasePage(updateReleaseURL); err == nil {
 		t.Fatal("missing application reported success")
 	}
 }

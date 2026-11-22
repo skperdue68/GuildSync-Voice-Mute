@@ -11,8 +11,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
- * CheckForUpdate asks GitHub for the newest published release. It never downloads
- * or executes anything; the UI offers the release page instead.
+ * CheckForUpdate asks GitHub for the newest published release. The latest
+ * endpoint already skips drafts and pre-releases, so a pre-release is never
+ * offered as an update.
  * @returns {$CancellablePromise<$models.UpdateInfo>}
  */
 export function CheckForUpdate() {
@@ -65,20 +66,13 @@ export function GetStartAtLogin() {
 /**
  * @returns {$CancellablePromise<void>}
  */
-export function HideWindow() {
-    return $Call.ByID(542966029);
-}
-
-/**
- * @returns {$CancellablePromise<void>}
- */
 export function Logout() {
     return $Call.ByID(1110373539);
 }
 
 /**
  * OpenReleasePage opens a GuildSync release page in the system browser, refusing
- * any other URL so a crafted release payload cannot send the browser elsewhere.
+ * any other URL.
  * @param {string} url
  * @returns {$CancellablePromise<void>}
  */
@@ -87,8 +81,8 @@ export function OpenReleasePage(url) {
 }
 
 /**
- * Quit leaves through the tray menu or the title bar without the close-to-tray
- * hook canceling the shutdown.
+ * Quit leaves through the tray menu without the close-to-tray hook canceling the
+ * shutdown.
  * @returns {$CancellablePromise<void>}
  */
 export function Quit() {
@@ -125,6 +119,8 @@ export function SetStartAtLogin(enabled) {
 }
 
 /**
+ * ShowWindow brings the window back, which is what a second launch of the app
+ * asks for instead of starting its own copy.
  * @returns {$CancellablePromise<void>}
  */
 export function ShowWindow() {
@@ -132,9 +128,6 @@ export function ShowWindow() {
 }
 
 /**
- * Start-at-login is registered with the desktop itself, so the operating system
- * entry is the source of truth rather than a settings field that can drift from
- * it. The platform files implement the three helpers below.
  * @returns {$CancellablePromise<boolean>}
  */
 export function StartAtLoginSupported() {

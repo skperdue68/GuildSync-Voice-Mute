@@ -13,7 +13,6 @@ type App struct {
 	app            *application.App
 	window         *application.WebviewWindow
 	tray           *application.SystemTray
-	trayStatus     *application.MenuItem
 	quitting       bool
 	updateURL      string
 	loginState     string
@@ -45,7 +44,6 @@ func NewApp() *App {
 }
 func (a *App) ServiceShutdown() error {
 	_ = a.SetShortcutActive(false)
-	a.stopTray()
 	a.stopOAuth()
 	return nil
 }

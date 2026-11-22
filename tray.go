@@ -11,12 +11,13 @@ import (
 //go:embed build/appicon.png
 var appIcon []byte
 
-// startTray adds a tray icon when the desktop has a tray host. The window then
-// closes to the tray instead of exiting, which is what keeps the shortcut
-// registered while the user is in Discord. Desktops without a tray host keep the
-// old behaviour: closing the window quits the app.
+// startTray adds a tray icon when the desktop actually shows one. Closing the
+// window then hides it, which is what keeps the shortcut registered while the
+// user is in Discord. A desktop without a tray host keeps close-to-quit, because
+// there would be no way back to the window.
 func (a *App) startTray() {
-	if a.app == nil || !trayHostAvailable() {
+	window := a.currentWindow()
+	if a.app == nil || window == nil || !trayHostAvailable() {
 		return
 	}
 	tray := a.app.SystemTray.New()
@@ -25,69 +26,44 @@ func (a *App) startTray() {
 	} else {
 		tray.SetIcon(appIcon)
 	}
-	tray.SetTooltip("GuildSync Voice Mute — idle")
-	if runtime.GOOS == "darwin" {
-		// A macOS status item opens its menu on a normal click.
-		tray.OnClick(tray.ShowMenu)
-	} else {
-		tray.OnClick(a.ShowWindow)
-	}
-	tray.OnDoubleClick(a.ShowWindow)
+	// Attaching the window brings the platform defaults: a click toggles the
+	// window and a right click opens the menu.
+	tray.AttachWindow(window)
 	menu := a.app.NewMenu()
-	menu.Add("Show window").OnClick(func(*application.Context) { a.ShowWindow() })
-	menu.Add("Hide window").OnClick(func(*application.Context) { a.HideWindow() })
-	status := menu.Add("Mute idle")
-	status.SetEnabled(false)
-	menu.AddSeparator()
 	menu.Add("Quit GuildSync Voice Mute").OnClick(func(*application.Context) { a.Quit() })
 	tray.SetMenu(menu)
 	a.mu.Lock()
 	a.tray = tray
-	a.trayStatus = status
 	a.mu.Unlock()
-	a.updateTrayIndicator(false, "")
+	a.updateTrayIndicator(false)
 }
 
-// updateTrayIndicator reflects mute state in the tray so the window can stay
-// hidden while the user is in Discord.
-func (a *App) updateTrayIndicator(muted bool, message string) {
+// updateTrayIndicator mirrors the mute state in the tray so the window can stay
+// hidden. The tooltip carries it on every platform; the menu bar label is the
+// only place macOS shows text next to the icon.
+func (a *App) updateTrayIndicator(muted bool) {
 	a.mu.Lock()
-	tray, status := a.tray, a.trayStatus
+	tray := a.tray
 	a.mu.Unlock()
 	if tray == nil {
 		return
 	}
-	label := "Mute idle"
+	tooltip := "GuildSync Voice Mute"
+	label := ""
 	if muted {
-		label = "Muted"
-	}
-	if message != "" {
-		label = message
-	}
-	status.SetLabel(label)
-	tooltip := "GuildSync Voice Mute — idle"
-	if muted {
-		tooltip = "GuildSync Voice Mute — muted"
-	}
-	tray.SetTooltip(tooltip)
-	if runtime.GOOS == "darwin" {
-		if muted {
-			tray.SetLabel("🔇")
-		} else {
-			tray.SetLabel("")
+		tooltip += " — muted"
+		if runtime.GOOS == "darwin" {
+			label = "🔇"
 		}
 	}
+	tray.SetTooltip(tooltip)
+	tray.SetLabel(label)
 }
 
-func (a *App) stopTray() {
+func (a *App) currentWindow() *application.WebviewWindow {
 	a.mu.Lock()
-	tray := a.tray
-	a.tray = nil
-	a.trayStatus = nil
-	a.mu.Unlock()
-	if tray != nil {
-		tray.Destroy()
-	}
+	defer a.mu.Unlock()
+	return a.window
 }
 
 func (a *App) setWindow(window *application.WebviewWindow) {
@@ -96,23 +72,12 @@ func (a *App) setWindow(window *application.WebviewWindow) {
 	a.mu.Unlock()
 }
 
+// ShowWindow brings the window back, which is what a second launch of the app
+// asks for instead of starting its own copy.
 func (a *App) ShowWindow() {
-	a.mu.Lock()
-	w := a.window
-	a.mu.Unlock()
-	if w == nil {
-		return
-	}
-	w.Show()
-	w.Focus()
-}
-
-func (a *App) HideWindow() {
-	a.mu.Lock()
-	w := a.window
-	a.mu.Unlock()
-	if w != nil {
-		w.Hide()
+	if window := a.currentWindow(); window != nil {
+		window.Show()
+		window.Focus()
 	}
 }
 
@@ -124,8 +89,8 @@ func (a *App) hideOnClose() bool {
 	return a.tray != nil && !a.quitting
 }
 
-// Quit leaves through the tray menu or the title bar without the close-to-tray
-// hook canceling the shutdown.
+// Quit leaves through the tray menu without the close-to-tray hook canceling the
+// shutdown.
 func (a *App) Quit() {
 	a.mu.Lock()
 	a.quitting = true
