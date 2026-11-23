@@ -202,10 +202,28 @@ jobs:
             python tools/check_product_metadata.py --expected "${{ github.event.release.tag_name }}"
           fi
           python tools/package_release.py "$PLATFORM_NAME" --version "v$VERSION"
+      - name: Install Inno Setup
+        if: matrix.platform == 'Windows'
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Build the platform installer
+        shell: bash
+        env:
+          PLATFORM_NAME: ${{ matrix.platform }}
+        run: |
+          VERSION="v$(python tools/check_product_metadata.py)"
+          case "$PLATFORM_NAME" in
+            Windows) python tools/package_installers.py windows --version "$VERSION" ;;
+            macOS) python tools/package_installers.py macos --version "$VERSION" ;;
+            # A .deb is built for one machine only, so it is named for the
+            # architecture of the runner that built it.
+            Linux) python tools/package_installers.py linux --version "$VERSION" --arch "$(dpkg --print-architecture)" ;;
+          esac
       - uses: actions/upload-artifact@v7
         with:
           name: GuildSync-Voice-Mute-${{ matrix.platform }}
-          path: release/*.zip
+          # The installer ships next to the portable zip, so both are uploaded.
+          path: release/*
           if-no-files-found: error
   release:
     if: github.event_name == 'release'
@@ -218,8 +236,24 @@ jobs:
         with:
           path: release
           merge-multiple: true
+      # A release without its installers would leave the in-app update check
+      # with nothing to fetch, so nothing is published until all three exist.
+      - name: Check every platform produced an installer
+        shell: bash
+        run: |
+          status=0
+          for pattern in 'release/*-Windows-Setup.exe' 'release/*-macOS.dmg' 'release/*-Linux-*.deb'; do
+            if compgen -G "$pattern" > /dev/null; then
+              echo "found $pattern"
+            else
+              echo "::error::no installer matches $pattern"
+              status=1
+            fi
+          done
+          ls -l release
+          exit "$status"
       - name: Publish tagged release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" release/*.zip --repo "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
