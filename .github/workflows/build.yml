@@ -96,9 +96,11 @@ jobs:
           go build ./...
           go test ./...
   # The real installers are only built on a release. Run the release's own
-  # build-installer-then-zip step on a stub payload on each native runner, so
-  # the Windows and macOS packagers and the zip the updater downloads are
-  # proven by a pull request instead of by the first release that needs them.
+  # build-installer-then-zip step on each native runner, so every packager and
+  # the zip the updater downloads are proven by a pull request instead of by
+  # the first release that needs them. Windows and macOS package a stub payload;
+  # Linux builds the real application, because the AppImage bundler reads the
+  # binary's linked libraries.
   installers:
     if: github.event_name == 'pull_request'
     strategy:
@@ -109,6 +111,8 @@ jobs:
             platform: windows
           - os: macos-latest
             platform: macos
+          - os: ubuntu-24.04
+            platform: linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -119,7 +123,35 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: choco install innosetup --no-progress -y
-      - name: Build the installer zip and install from it
+      - uses: actions/setup-go@v7
+        if: runner.os == 'Linux'
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v7
+        if: runner.os == 'Linux'
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
+      - name: Install Wails 3 CLI
+        if: runner.os == 'Linux'
+        shell: bash
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+      - name: Build frontend bundle
+        if: runner.os == 'Linux'
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Build the application the AppImage bundles
+        if: runner.os == 'Linux'
+        shell: bash
+        run: wails3 build
+      - name: Build the installer zip and verify the copy inside it
         shell: bash
         run: python tools/smoke_installers.py ${{ matrix.platform }}
   build:

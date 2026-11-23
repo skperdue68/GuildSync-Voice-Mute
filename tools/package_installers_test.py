@@ -194,6 +194,14 @@ class SmokeZipTest(unittest.TestCase):
             self.assertEqual(unpacked.name, archive.name)
             self.assertEqual(unpacked.read_bytes(), archive.read_bytes())
 
+    def test_the_unpacked_installer_keeps_its_executable_bit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / 'GuildSync-Voice-Mute-0.0.1-Linux-x86_64.AppImage'
+            archive.write_bytes(b'AppImage')
+            archive.chmod(0o755)
+            unpacked = smoke_installers.unpack(package_installers.zip_installer(archive), Path(tmp) / 'unpacked')
+            self.assertTrue(os.access(unpacked, os.X_OK))
+
     def test_a_zip_holding_more_than_the_installer_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             download = Path(tmp) / 'installer.zip'
@@ -202,6 +210,41 @@ class SmokeZipTest(unittest.TestCase):
                 bundle.writestr('readme', b'two')
             with self.assertRaises(SystemExit):
                 smoke_installers.unpack(download, Path(tmp) / 'unpacked')
+
+
+class SmokePayloadTest(unittest.TestCase):
+    def test_linux_packages_the_application_instead_of_a_stub(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(smoke_installers.payload_root(tmp, 'linux'), smoke_installers.SOURCE_ROOT)
+            self.assertEqual(smoke_installers.payload_root(tmp, 'macos'), Path(tmp))
+
+
+@unittest.skipUnless(sys.platform.startswith('linux'), 'the AppImage runtime is Linux-only')
+class LinuxSmokeTest(unittest.TestCase):
+    """The Linux leg verifies the AppImage the updater downloads."""
+
+    def image(self, tmp, body):
+        image = Path(tmp) / 'GuildSync-Voice-Mute-0.0.1-Linux-x86_64.AppImage'
+        image.write_text('#!/bin/sh\nset -e\n' + body)
+        image.chmod(0o755)
+        return image
+
+    def test_the_extracted_image_carries_the_application(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.image(tmp, (
+                'mkdir -p squashfs-root/usr/bin\n'
+                'touch squashfs-root/AppRun\n'
+                f'touch squashfs-root/{package_installers.SLUG}.desktop\n'
+                f'touch squashfs-root/{package_installers.SLUG}.png\n'
+                f'cp "$0" squashfs-root/usr/bin/{package_installers.SLUG}\n'
+            ))
+            smoke_installers.verify_linux(image)
+
+    def test_an_image_without_the_application_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = self.image(tmp, 'mkdir -p squashfs-root\ntouch squashfs-root/AppRun\n')
+            with self.assertRaises(SystemExit):
+                smoke_installers.verify_linux(image)
 
 
 class ArchitectureNameTest(unittest.TestCase):

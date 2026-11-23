@@ -1,13 +1,17 @@
-"""Prove the Windows and macOS packagers and their published zips on their own platforms.
+"""Prove each platform's installer and its published zip on its own platform.
 
 The pull-request gate builds no application, so the installer paths are only
-exercised on a release. This script builds a throwaway payload with the shape a
-packager reads, packs it through the same build-installer-and-zip step a release
-runs, and then installs from the zip that step published. Run it as
-`python tools/smoke_installers.py windows` on a Windows runner and
-`... macos` on a macOS runner.
+exercised on a release. This script builds the payload each packager reads,
+packs it through the same build-installer-and-zip step a release runs, and then
+verifies the copy extracted from the zip it published. Windows and macOS package
+a stub payload, because their packagers only need a file of the right shape;
+Linux packages the application the job just built, because the AppImage bundler
+reads the binary's linked libraries. Run it as
+`python tools/smoke_installers.py windows` on a Windows runner, `... macos` on a
+macOS runner and `... linux` on an Ubuntu runner with GTK4/WebKitGTK installed.
 """
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -40,8 +44,22 @@ def stub_root(destination, platform):
     return root
 
 
+def payload_root(workspace, platform):
+    """The root a packager reads for this platform.
+
+    The AppImage bundler runs ldd on the binary it is given and fails on a stub,
+    so Linux packages the build this job made rather than a fake payload.
+    """
+    if platform == 'linux':
+        return SOURCE_ROOT
+    return stub_root(workspace, platform)
+
+
 def package(root, platform):
-    """Build the installer and the zip a release publishes from a stub payload."""
+    """Build the installer and the zip a release publishes."""
+    if platform == 'linux':
+        # The generator names the AppImage after the architecture it built.
+        return package_installers.build_installer(root, platform, SMOKE_VERSION, os.uname().machine)
     return package_installers.build_installer(root, platform, SMOKE_VERSION)
 
 
@@ -55,7 +73,14 @@ def unpack(download, destination):
         names = bundle.namelist()
         if len(names) != 1:
             raise SystemExit(f'::error::{download.name} holds {names}, not one installer')
-        return Path(bundle.extract(names[0], destination))
+        info = bundle.getinfo(names[0])
+        extracted = Path(bundle.extract(names[0], destination))
+    # An AppImage has to stay executable, and zipfile does not restore the mode
+    # the archiver recorded; an unzip on the user's machine does.
+    mode = info.external_attr >> 16
+    if mode:
+        extracted.chmod(mode)
+    return extracted
 
 
 def verify_windows(archive):
@@ -97,12 +122,37 @@ def verify_macos(archive):
             subprocess.run(['hdiutil', 'detach', mount, '-force'], check=False, capture_output=True)
 
 
+def verify_linux(archive):
+    """Extract the AppImage and confirm it carries the application and its launcher."""
+    with tempfile.TemporaryDirectory() as extraction:
+        subprocess.run(
+            [str(archive), '--appimage-extract'],
+            cwd=extraction,
+            check=True,
+            capture_output=True,
+            timeout=900,
+        )
+        root = Path(extraction) / 'squashfs-root'
+        if not (root / 'AppRun').is_file():
+            raise SystemExit('::error::the AppImage has no AppRun')
+        binary = root / 'usr' / 'bin' / package_installers.SLUG
+        if not binary.is_file():
+            raise SystemExit(f'::error::the AppImage has no usr/bin/{package_installers.SLUG}')
+        entry = root / f'{package_installers.SLUG}.desktop'
+        installed = root / 'usr' / 'share' / 'applications' / entry.name
+        if not entry.is_file() and not installed.is_file():
+            raise SystemExit(f'::error::the AppImage has no {entry.name}')
+        if not any(root.rglob(f'{package_installers.SLUG}.png')):
+            raise SystemExit('::error::the AppImage has no application icon')
+        print(f'extracted {binary.relative_to(root)} and its launcher')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('platform', choices=('windows', 'macos'))
+    parser.add_argument('platform', choices=('windows', 'macos', 'linux'))
     arguments = parser.parse_args()
     with tempfile.TemporaryDirectory() as workspace:
-        root = stub_root(workspace, arguments.platform)
+        root = payload_root(workspace, arguments.platform)
         archive, download = package(root, arguments.platform)
         size = archive.stat().st_size
         # Size proves nothing about a stub payload, so only an empty file is
@@ -118,8 +168,10 @@ def main():
         print(f'{download.name}: {download.stat().st_size} bytes, holding {unpacked.name}')
         if arguments.platform == 'windows':
             verify_windows(unpacked)
-        else:
+        elif arguments.platform == 'macos':
             verify_macos(unpacked)
+        else:
+            verify_linux(unpacked)
     return 0
 
 
