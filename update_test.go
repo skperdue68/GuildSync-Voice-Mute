@@ -197,6 +197,68 @@ func TestFetchUpdateAssetVerifiesTheDigest(t *testing.T) {
 	}
 }
 
+func TestMakeExecutableSetsTheBitOnLinux(t *testing.T) {
+	// An AppImage is run as a program, so the saved copy has to be executable or
+	// opening it fails with "Permission denied".
+	path := filepath.Join(t.TempDir(), "GuildSync-Voice-Mute-9.9.9-Linux-x86_64.AppImage")
+	if err := os.WriteFile(path, []byte("appimage payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := makeExecutable(path, "linux"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != installerMode {
+		t.Fatalf("mode = %v, want %v", info.Mode().Perm(), installerMode)
+	}
+	if contents, err := os.ReadFile(path); err != nil || string(contents) != "appimage payload" {
+		t.Fatalf("setting the mode changed the file: %q, %v", contents, err)
+	}
+	// The bit is set by the download, not by the user, so running it twice must
+	// stay harmless.
+	if err := makeExecutable(path, "linux"); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != installerMode {
+		t.Fatalf("a second pass left mode %v, %v", info.Mode(), err)
+	}
+}
+
+func TestMakeExecutableLeavesOtherPlatformsAlone(t *testing.T) {
+	// Windows runs the setup by name and macOS mounts the disk image, so neither
+	// reads the mode and the downloaded file keeps the one it was given.
+	for _, goos := range []string{"windows", "darwin", "plan9"} {
+		path := filepath.Join(t.TempDir(), "installer")
+		if err := os.WriteFile(path, []byte("payload"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := makeExecutable(path, goos); err != nil {
+			t.Fatalf("%s: %v", goos, err)
+		}
+		after, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.Mode() != before.Mode() {
+			t.Fatalf("%s changed the mode from %v to %v", goos, before.Mode(), after.Mode())
+		}
+	}
+}
+
+func TestMakeExecutableReportsAFailure(t *testing.T) {
+	// A download that cannot be made runnable must not be reported as ready.
+	if err := makeExecutable(filepath.Join(t.TempDir(), "missing.AppImage"), "linux"); err == nil {
+		t.Fatal("a missing file was reported as executable")
+	}
+}
+
 func TestCheckForUpdateOffersTheInstallerWithoutDownloadingIt(t *testing.T) {
 	suffix := updateSuffix(runtime.GOOS, runtime.GOARCH)
 	if suffix == "" {
@@ -288,6 +350,17 @@ func TestDownloadUpdateFetchesTheInstallerForThisPlatform(t *testing.T) {
 	}
 	if contents, err := os.ReadFile(opened); err != nil || !bytes.Equal(contents, payload) {
 		t.Fatalf("downloaded %q, %v", contents, err)
+	}
+	// Opening the file is all the UI does next, so on Linux the download has to
+	// have left it runnable.
+	if runtime.GOOS == "linux" {
+		info, err := os.Stat(opened)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm()&0o111 == 0 {
+			t.Fatalf("downloaded %q with mode %v, which cannot be run", opened, info.Mode().Perm())
+		}
 	}
 	if !strings.Contains(message, name) || !strings.Contains(message, "opened it") {
 		t.Fatalf("message does not report the download: %q", message)
