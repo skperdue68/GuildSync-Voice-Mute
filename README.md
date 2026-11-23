@@ -4,7 +4,7 @@ A small desktop companion for GuildSync's Discord voice-channel mute feature. It
 
 ## Use
 
-1. Open the application and choose **Sign in with Discord**. Complete login in your browser. You do not need a GuildSync account or GuildSync approval. You must belong to the configured Discord server and have a role allowed by its voice-mute policy.
+1. Open the application and choose **Sign in with Discord**. Complete login in your browser. You do not need a GuildSync account or GuildSync approval. You must belong to the configured Discord server and hold a role allowed by its voice-mute policy (see [Server requirements](#server-requirements)).
 2. Choose **Set shortcut**, then press one key, optionally with Ctrl, Alt or Shift, and release it to save. Examples: `F8`, `Space`, `Ctrl+Shift+M`, or `Alt+F2`. Letters, numbers, F1–F12, Ctrl/Alt/Shift, and navigation keys are supported. Escape cancels. **Return to Default** restores Ctrl+M, the 10-second auto-unmute and disables the shortcut.
 3. Enable the mute shortcut and join a Discord voice channel. Press the shortcut to mute eligible lower-ranked members in that channel for the configured time (10 seconds by default; set 3–120 seconds in **Auto-unmute after**). Pressing it again restarts the countdown instead of unmuting, and every mute ends on its own.
 
@@ -14,9 +14,19 @@ The companion must remain running while you use the shortcut. On desktops with a
 
 ## Server requirements
 
-Deploy [GuildSync's voice-mute feature](https://github.com/skperdue68/POC/pull/85) and configure its allowed Discord role names or IDs, rank order, and enabled policy. The bot needs **Mute Members** and **View Audit Log**. The companion connects to `https://guildsync.perdues.me`, using dedicated voice-only authentication endpoints on the existing backend. There is no port 3005 companion service.
+Deploy [GuildSync's voice-mute feature](https://github.com/skperdue68/POC/pull/85) and configure it on the GuildSync side; nothing in this companion decides who may mute. Access is **Discord-role based, with no per-account allowlist**: a member is allowed because of the Discord roles they hold, never because their account was listed individually. The bot needs **Mute Members** and **View Audit Log**. The companion connects to `https://guildsync.perdues.me`, using dedicated voice-only authentication endpoints on the existing backend. There is no port 3005 companion service.
 
-The Enable checkbox remains disabled until Discord login succeeds. Discord membership, permitted requester roles, recognized ranks and bot permissions remain authoritative for mute requests. GuildSync Viewers may also mute from GuildSync when their Discord role permits it; a GuildSync Admin role does not bypass Discord rank protection.
+The bot reads three settings, set in `NodeJS/GuildSync-Discord-Bot/.env` in the GuildSync repository:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `GUILDSYNC_VOICE_MUTE_ENABLED` | `false` | Whether new mute requests are accepted at all. Disabling it ends live sessions and clears known temporary mutes. |
+| `GUILDSYNC_VOICE_MUTE_ALLOWED_ROLE_IDS` | blank | Comma-separated **Discord role names or numeric IDs** allowed to request mutes, for example `Kingpin, Consigliere`. Names are case-insensitive and omit `@`. Blank allows nobody. |
+| `GUILDSYNC_VOICE_MUTE_RANK_ROLE_IDS` | blank | Guild-rank roles from lowest to highest, as names or numeric IDs. Blank discovers the recognized ranks (Gangsters, Associates, Soldiers, Capos, Caporegime, Consigliere, Kingpin). Only strictly lower ranks can be muted. |
+
+The `_ROLE_IDS` suffix is historical; role names work in both settings. The same three settings can be changed live in GuildSync under **Reports and Admin → Administrator Configuration → Voice channel mute** and saved as server settings, which override the bot's environment defaults without a restart. If an account is refused, check that screen first, then the bot's `.env`.
+
+The Enable checkbox remains disabled until Discord login succeeds. Discord membership, permitted requester roles, recognized ranks and bot permissions remain authoritative for mute requests; each request is rechecked when it is made. GuildSync Viewers may also mute from GuildSync when their Discord role permits it; a GuildSync Admin role does not bypass Discord rank protection.
 
 ## Install and platform support
 
