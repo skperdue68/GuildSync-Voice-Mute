@@ -1,47 +1,30 @@
 name: CodeQL
-# Default setup runs Go in autobuild mode on a stock runner, which has no
-# GTK4/WebKitGTK headers, so the cgo build of Wails never runs and the extractor
-# reports "could not import C" plus type errors in the dependency's generated
-# bindings. This workflow installs those headers and builds with cgo instead.
+# The default setup that GitHub generated for this repository analysed Go in
+# autobuild mode on a stock runner. That runner has no GTK4/WebKitGTK headers, so
+# the cgo build of Wails never ran and the extractor reported "could not import
+# C" plus type errors in the dependency's generated bindings. This workflow
+# installs the headers and builds with cgo, so the extraction sees real C types.
 #
-# GitHub refuses advanced-configuration SARIF uploads while default setup is
-# enabled, so the analysis below stays idle until default setup is turned off in
-# Settings -> Code security -> Code scanning. That keeps this workflow green
-# rather than red for a configuration mismatch.
+# Default setup is switched off in the repository settings, because GitHub
+# refuses advanced-configuration SARIF uploads while it is on. It cannot be
+# probed from here: reading the default-setup configuration needs
+# "Administration: read", which a workflow token can never be granted, so a probe
+# only ever sees 403 and would silently turn the scan off. If default setup is
+# ever re-enabled, the upload below fails with GitHub's own explanation and that
+# is the signal to switch it off again.
 on:
   push:
     branches: [master]
   pull_request:
   schedule:
     - cron: '17 3 * * 1'
+  # Lets the analysis be run by hand after a scanner or runner change without
+  # pushing a commit.
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  configuration:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: read
-    outputs:
-      enabled: ${{ steps.default-setup.outputs.enabled }}
-    steps:
-      - name: Check whether CodeQL default setup is still on
-        id: default-setup
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          state="$(gh api "repos/$REPOSITORY/code-scanning/default-setup" --jq .state 2>/dev/null || echo unknown)"
-          if [ "$state" = "not-configured" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "Default setup is off; running the advanced analysis."
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::CodeQL default setup reports '$state', so this workflow stays idle."
-          fi
   analyze:
-    needs: configuration
-    if: needs.configuration.outputs.enabled == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
