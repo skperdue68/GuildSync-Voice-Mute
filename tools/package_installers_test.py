@@ -12,7 +12,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -150,66 +149,37 @@ class AppImageBuildTest(unittest.TestCase):
                 package_installers.linux_package(root, '2.1.0', run=lambda command, check: None)
 
 
-class InstallerZipTest(unittest.TestCase):
-    def test_the_download_is_a_zip_of_the_installer(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            archive = Path(tmp) / 'GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe'
-            archive.write_bytes(b'setup payload')
-            download = package_installers.zip_installer(archive)
-            self.assertEqual(download.name, 'GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe.zip')
-            with zipfile.ZipFile(download) as bundle:
-                self.assertEqual(bundle.namelist(), [archive.name])
-                self.assertEqual(bundle.read(archive.name), b'setup payload')
-
-
 class BuildInstallerTest(unittest.TestCase):
-    def test_publishes_the_zip_of_the_installer_the_packager_wrote(self):
+    def test_publishes_the_installer_the_packager_wrote(self):
         with tempfile.TemporaryDirectory() as tmp:
             archive = Path(tmp) / 'GuildSync-Voice-Mute-1.0.0-Linux-x86_64.AppImage'
             archive.write_bytes(b'AppImage')
             with mock.patch.object(package_installers, 'linux_package', return_value=archive):
-                built, download = package_installers.build_installer(Path(tmp), 'linux', '1.0.0')
+                built = package_installers.build_installer(Path(tmp), 'linux', '1.0.0')
             self.assertEqual(built, archive)
-            self.assertEqual(download.name, archive.name + '.zip')
-            with zipfile.ZipFile(download) as bundle:
-                self.assertEqual(bundle.namelist(), [archive.name])
 
 
-class SmokeZipTest(unittest.TestCase):
-    """The pull-request smoke job proves the zip the updater downloads."""
+class SmokePackageTest(unittest.TestCase):
+    """The pull-request smoke job proves the installer a release publishes."""
 
     def test_the_smoke_packages_through_the_release_path(self):
         stub = Path('stub')
         with mock.patch.object(
-            package_installers, 'build_installer', return_value=('installer', 'zip')
+            package_installers, 'build_installer', return_value='installer'
         ) as builder:
-            self.assertEqual(smoke_installers.package(stub, 'macos'), ('installer', 'zip'))
+            self.assertEqual(smoke_installers.package(stub, 'macos'), 'installer')
         builder.assert_called_once_with(stub, 'macos', smoke_installers.SMOKE_VERSION)
 
-    def test_the_installer_is_unpacked_for_verification(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            archive = Path(tmp) / 'GuildSync-Voice-Mute-0.0.1-Windows-Setup.exe'
-            archive.write_bytes(b'setup payload')
-            unpacked = smoke_installers.unpack(package_installers.zip_installer(archive), Path(tmp) / 'unpacked')
-            self.assertEqual(unpacked.name, archive.name)
-            self.assertEqual(unpacked.read_bytes(), archive.read_bytes())
 
-    def test_the_unpacked_installer_keeps_its_executable_bit(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            archive = Path(tmp) / 'GuildSync-Voice-Mute-0.0.1-Linux-x86_64.AppImage'
-            archive.write_bytes(b'AppImage')
-            archive.chmod(0o755)
-            unpacked = smoke_installers.unpack(package_installers.zip_installer(archive), Path(tmp) / 'unpacked')
-            self.assertTrue(os.access(unpacked, os.X_OK))
+class ReleaseArtifactTest(unittest.TestCase):
+    """An installer is published as it was built, with no zip around it."""
 
-    def test_a_zip_holding_more_than_the_installer_is_refused(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            download = Path(tmp) / 'installer.zip'
-            with zipfile.ZipFile(download, 'w') as bundle:
-                bundle.writestr('installer', b'one')
-                bundle.writestr('readme', b'two')
-            with self.assertRaises(SystemExit):
-                smoke_installers.unpack(download, Path(tmp) / 'unpacked')
+    def test_the_release_uploads_each_installer_itself(self):
+        text = (ROOT / '.github' / 'workflows' / 'build.yml').read_text()
+        for name in ('-Windows-Setup.exe', '-macOS.dmg', '-Linux-*.AppImage'):
+            self.assertIn(f'release/*{name}', text)
+        self.assertNotIn('Setup.exe.zip', text)
+        self.assertNotIn('AppImage.zip', text)
 
 
 class SmokePayloadTest(unittest.TestCase):

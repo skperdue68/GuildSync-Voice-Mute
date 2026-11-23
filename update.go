@@ -108,21 +108,20 @@ func linuxArchitecture(goarch string) string {
 	return ""
 }
 
-// updateSuffix names the file an update downloads for each platform. Every
-// release publishes the installer next to a zip of that installer, and the zip
-// is what an update fetches, so each name ends in ".zip". The Windows setup and
-// the macOS disk image work on every architecture those releases target; a Linux
-// AppImage does not, so its architecture is part of the name and is picked to
-// match the machine.
+// updateSuffix names the file an update downloads for each platform: the
+// installer itself, because wrapping it in a zip only adds a layer the user has
+// to unpack before they can install. The Windows setup and the macOS disk image
+// work on every architecture those releases target; a Linux AppImage does not,
+// so its architecture is part of the name and is picked to match the machine.
 func updateSuffix(goos, goarch string) string {
 	switch goos {
 	case "windows":
-		return "-Windows-Setup.exe.zip"
+		return "-Windows-Setup.exe"
 	case "darwin":
-		return "-macOS.dmg.zip"
+		return "-macOS.dmg"
 	case "linux":
 		if architecture := linuxArchitecture(goarch); architecture != "" {
-			return "-Linux-" + architecture + ".AppImage.zip"
+			return "-Linux-" + architecture + ".AppImage"
 		}
 	}
 	return ""
@@ -261,9 +260,9 @@ func (a *App) DownloadUpdate() (string, error) {
 		return "The download could not be completed (" + err.Error() + "). Open the download page instead.", nil
 	}
 	if err := a.openInstaller(path); err != nil {
-		return "Downloaded " + asset.Name + " to " + path + "; unzip it, run the installer inside, then start the new version.", nil
+		return "Downloaded " + asset.Name + " to " + path + "; open it to install, then start the new version.", nil
 	}
-	return "Downloaded " + asset.Name + " to " + path + " and opened it. Unzip it, quit the companion, run the installer inside, then start the new version.", nil
+	return "Downloaded " + asset.Name + " to " + path + " and opened it. Quit the companion before installing, then start the new version.", nil
 }
 
 // lookupUpdate asks GitHub for the newest published release and describes it.

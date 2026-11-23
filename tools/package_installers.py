@@ -4,9 +4,10 @@ The release zips stay portable archives. These are the installers users expect
 next to them: an Inno Setup .exe on Windows, a drag-to-Applications .dmg on
 macOS and an AppImage on Linux, which carries the GTK/WebKitGTK runtime it
 links against and so runs on any distribution. All three package the same bin/
-payload the zip uses, refuse to run when the product metadata is inconsistent,
-and publish the finished installer inside a zip as well, because that zip is
-the file the in-app update downloads.
+payload the zip uses and refuse to run when the product metadata is
+inconsistent. The installer is published as it was built, because wrapping it
+in a zip would only add a layer to unpack before the in-app update can install
+it.
 """
 import argparse
 import os
@@ -14,7 +15,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -37,35 +37,19 @@ def release_dir(root):
     return directory
 
 
-def zip_installer(archive):
-    """Publish the installer inside a zip and return the zip's path.
-
-    The updater downloads this zip rather than the bare installer, so what a run
-    of the app fetches is one archive format on every platform, named after the
-    installer it holds.
-    """
-    archive = Path(archive)
-    download = archive.with_name(archive.name + '.zip')
-    with zipfile.ZipFile(download, 'w', zipfile.ZIP_DEFLATED) as bundle:
-        bundle.write(archive, archive.name)
-    return download
-
-
 def build_installer(root, platform, version, architecture='x86_64', iscc=None):
-    """Build one platform's installer and publish it inside its zip.
+    """Build one platform's installer and return it.
 
-    A release runs exactly this, so the archive a smoke test builds is the one
-    the updater downloads rather than a bare installer shaped like it.
+    A release runs exactly this, so the file a smoke test builds is the one the
+    updater downloads rather than a stand-in shaped like it.
     """
     if platform == 'linux':
-        archive = linux_package(root, version, architecture)
-    elif platform == 'macos':
-        archive = macos_installer(root, version)
-    elif platform == 'windows':
-        archive = windows_installer(root, version, iscc)
-    else:
-        raise ValueError(f'{platform!r} is not a platform installer')
-    return archive, zip_installer(archive)
+        return linux_package(root, version, architecture)
+    if platform == 'macos':
+        return macos_installer(root, version)
+    if platform == 'windows':
+        return windows_installer(root, version, iscc)
+    raise ValueError(f'{platform!r} is not a platform installer')
 
 
 def appimage_command(binary, icon, desktop, output, build):
@@ -190,14 +174,13 @@ def main():
     root = Path(__file__).resolve().parents[1]
     try:
         version = metadata.validate(root, arguments.version)
-        archive, download = build_installer(
+        archive = build_installer(
             root, arguments.platform, version, arguments.arch, arguments.iscc
         )
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f'::error::installer packaging failed: {error}')
         return 1
     print(archive)
-    print(download)
     return 0
 
 
