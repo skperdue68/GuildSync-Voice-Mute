@@ -79,28 +79,70 @@ func TestCheckForUpdateReportsHTTPFailure(t *testing.T) {
 
 func TestPickUpdateAssetMatchesEachPlatform(t *testing.T) {
 	assets := []updateAsset{
-		{Name: "GuildSync-Voice-Mute-2.1.0-Linux.deb", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux.deb"},
+		{Name: "GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb"},
+		{Name: "GuildSync-Voice-Mute-2.1.0-Linux-arm64.deb", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-arm64.deb"},
 		{Name: "GuildSync-Voice-Mute-2.1.0-macOS.dmg", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-macOS.dmg"},
 		{Name: "GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe"},
 	}
-	for goos, want := range map[string]string{
-		"windows": "GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe",
-		"darwin":  "GuildSync-Voice-Mute-2.1.0-macOS.dmg",
-		"linux":   "GuildSync-Voice-Mute-2.1.0-Linux.deb",
+	for _, tc := range []struct{ goos, goarch, want string }{
+		{"windows", "amd64", "GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe"},
+		// The setup is x64-compatible, so an arm64 PC runs the same one.
+		{"windows", "arm64", "GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe"},
+		// The disk image holds a universal bundle.
+		{"darwin", "arm64", "GuildSync-Voice-Mute-2.1.0-macOS.dmg"},
+		{"darwin", "amd64", "GuildSync-Voice-Mute-2.1.0-macOS.dmg"},
+		// A Debian package is built for one machine only.
+		{"linux", "amd64", "GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb"},
+		{"linux", "arm64", "GuildSync-Voice-Mute-2.1.0-Linux-arm64.deb"},
 	} {
-		asset, ok := pickUpdateAsset(assets, goos, updateAssetBase)
-		if !ok || asset.Name != want {
-			t.Errorf("pickUpdateAsset(%q) = %q, %v; want %q", goos, asset.Name, ok, want)
+		asset, ok := pickUpdateAsset(assets, tc.goos, tc.goarch, updateAssetBase)
+		if !ok || asset.Name != tc.want {
+			t.Errorf("pickUpdateAsset(%s/%s) = %q, %v; want %q", tc.goos, tc.goarch, asset.Name, ok, tc.want)
 		}
 	}
 }
 
+func TestPickUpdateAssetRefusesAnotherArchitecture(t *testing.T) {
+	// A release built only on amd64 must not hand an arm64 machine a package
+	// dpkg will reject.
+	assets := []updateAsset{{
+		Name: "GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb",
+		URL:  updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb",
+	}}
+	if asset, ok := pickUpdateAsset(assets, "linux", "arm64", updateAssetBase); ok {
+		t.Fatalf("an arm64 machine picked %q", asset.Name)
+	}
+	if asset, ok := pickUpdateAsset(assets, "linux", "amd64", updateAssetBase); !ok || asset.Name != assets[0].Name {
+		t.Fatalf("an amd64 machine picked %q, %v", asset.Name, ok)
+	}
+}
+
+func TestUpdateSuffixNamesTheDebianArchitecture(t *testing.T) {
+	for goarch, want := range map[string]string{
+		"amd64":   "-Linux-amd64.deb",
+		"arm64":   "-Linux-arm64.deb",
+		"386":     "-Linux-i386.deb",
+		"arm":     "-Linux-armhf.deb",
+		"ppc64le": "-Linux-ppc64el.deb",
+	} {
+		if got := updateSuffix("linux", goarch); got != want {
+			t.Errorf("updateSuffix(linux, %q) = %q, want %q", goarch, got, want)
+		}
+	}
+	if got := updateSuffix("linux", "wasm"); got != "" {
+		t.Errorf("updateSuffix(linux, wasm) = %q, want no installer", got)
+	}
+	if got := updateSuffix("windows", "arm64"); got != "-Windows-Setup.exe" {
+		t.Errorf("updateSuffix(windows, arm64) = %q", got)
+	}
+}
+
 func TestPickUpdateAssetRefusesAnotherHostOrPlatform(t *testing.T) {
-	assets := []updateAsset{{Name: "GuildSync-Voice-Mute-2.1.0-Linux.deb", URL: "https://example.com/GuildSync-Voice-Mute-2.1.0-Linux.deb"}}
-	if _, ok := pickUpdateAsset(assets, "linux", updateAssetBase); ok {
+	assets := []updateAsset{{Name: "GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb", URL: "https://example.com/GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb"}}
+	if _, ok := pickUpdateAsset(assets, "linux", "amd64", updateAssetBase); ok {
 		t.Fatal("picked an asset from another host")
 	}
-	if _, ok := pickUpdateAsset(assets, "plan9", updateAssetBase); ok {
+	if _, ok := pickUpdateAsset(assets, "plan9", "amd64", updateAssetBase); ok {
 		t.Fatal("picked an asset for an unsupported platform")
 	}
 }
@@ -152,7 +194,7 @@ func TestFetchUpdateAssetVerifiesTheDigest(t *testing.T) {
 }
 
 func TestCheckForUpdateDownloadsTheInstallersForThisPlatform(t *testing.T) {
-	suffix := updateSuffix(runtime.GOOS)
+	suffix := updateSuffix(runtime.GOOS, runtime.GOARCH)
 	if suffix == "" {
 		t.Skip("no installer is published for this platform")
 	}

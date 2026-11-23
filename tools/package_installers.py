@@ -7,6 +7,7 @@ uses, and refuse to run when the product metadata is inconsistent.
 """
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,9 @@ SLUG = 'guildsync-voice-mute'
 MAINTAINER = 'GuildSync <58951920+skperdue68@users.noreply.github.com>'
 # Ubuntu 24.04 package names for the GTK4/WebKitGTK 6.0 runtime the build needs.
 DEPENDS = 'libgtk-4-1, libwebkitgtk-6.0-4'
+# Debian architecture names are lowercase and contain no separators. The value
+# ends up in the filename and the control file, so it is checked.
+DEBIAN_ARCHITECTURE = re.compile(r'[a-z0-9]+')
 ISCC_CANDIDATES = (
     r'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
     r'C:\Program Files\Inno Setup 6\ISCC.exe',
@@ -57,7 +61,13 @@ def deb_control(version, installed_kb, architecture='amd64'):
 
 
 def linux_package(root, version, architecture='amd64'):
-    """Build a .deb that installs the binary, a desktop entry and an icon."""
+    """Build a .deb for one Debian architecture.
+
+    Debian packages are architecture-specific, so the architecture is part of
+    the filename: the updater picks the one built for the machine it runs on.
+    """
+    if not DEBIAN_ARCHITECTURE.fullmatch(architecture):
+        raise ValueError(f'{architecture!r} is not a Debian architecture name')
     if not shutil.which('dpkg-deb'):
         raise ValueError('dpkg-deb is required to build the .deb package')
     root = Path(root)
@@ -84,7 +94,7 @@ def linux_package(root, version, architecture='amd64'):
         installed_kb = (binary.stat().st_size + icon.stat().st_size) // 1024 + 1
         control.write_text(deb_control(version, installed_kb, architecture))
 
-        archive = release_dir(root) / f'{BINARY}-{version}-Linux.deb'
+        archive = release_dir(root) / f'{BINARY}-{version}-Linux-{architecture}.deb'
         subprocess.run(['dpkg-deb', '--build', '--root-owner-group', str(stage), str(archive)], check=True)
         return archive
 

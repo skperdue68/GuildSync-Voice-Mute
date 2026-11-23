@@ -93,23 +93,42 @@ type updateAsset struct {
 	Digest string
 }
 
-// updateSuffix names the installer each platform ships in its release.
-func updateSuffix(goos string) string {
+// debArchitectures maps a Go architecture to the Debian name that goes in the
+// package filename. dpkg refuses a package built for another machine, so this
+// cannot be guessed from the release alone.
+var debArchitectures = map[string]string{
+	"386":     "i386",
+	"amd64":   "amd64",
+	"arm":     "armhf",
+	"arm64":   "arm64",
+	"ppc64le": "ppc64el",
+	"riscv64": "riscv64",
+	"s390x":   "s390x",
+}
+
+// updateSuffix names the installer each platform ships in its release. The
+// Windows setup and the macOS disk image work on every architecture those
+// releases target; a Debian package does not, so its architecture is part of
+// the name and is picked to match the machine.
+func updateSuffix(goos, goarch string) string {
 	switch goos {
 	case "windows":
 		return "-Windows-Setup.exe"
 	case "darwin":
 		return "-macOS.dmg"
 	case "linux":
-		return "-Linux.deb"
+		if architecture, ok := debArchitectures[goarch]; ok {
+			return "-Linux-" + architecture + ".deb"
+		}
 	}
 	return ""
 }
 
-// pickUpdateAsset chooses the installer for one platform. The URL check keeps a
-// crafted release payload from making the app download from anywhere else.
-func pickUpdateAsset(assets []updateAsset, goos, base string) (updateAsset, bool) {
-	suffix := updateSuffix(goos)
+// pickUpdateAsset chooses the installer for one platform and architecture. The
+// URL check keeps a crafted release payload from making the app download from
+// anywhere else.
+func pickUpdateAsset(assets []updateAsset, goos, goarch, base string) (updateAsset, bool) {
+	suffix := updateSuffix(goos, goarch)
 	if suffix == "" {
 		return updateAsset{}, false
 	}
@@ -227,7 +246,7 @@ func (a *App) downloadUpdate(version string, assets []updateAsset) string {
 	if base == "" {
 		base = updateAssetBase
 	}
-	asset, ok := pickUpdateAsset(assets, runtime.GOOS, base)
+	asset, ok := pickUpdateAsset(assets, runtime.GOOS, runtime.GOARCH, base)
 	if !ok {
 		return available + " That release has no installer for this platform; open the download page instead."
 	}

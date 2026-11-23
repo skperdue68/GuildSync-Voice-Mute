@@ -88,7 +88,7 @@ class DebBuildTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = fake_root(tmp)
             archive = package_installers.linux_package(root, '2.1.0')
-            self.assertEqual(archive.name, 'GuildSync-Voice-Mute-2.1.0-Linux.deb')
+            self.assertEqual(archive.name, 'GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb')
 
             contents = subprocess.run(
                 ['dpkg-deb', '--contents', str(archive)],
@@ -106,6 +106,26 @@ class DebBuildTest(unittest.TestCase):
             self.assertIn('Version: 2.1.0', fields)
             self.assertIn('Architecture: amd64', fields)
             self.assertIn('Depends: libgtk-4-1, libwebkitgtk-6.0-4', fields)
+
+    def test_deb_is_named_and_labelled_for_the_architecture_it_was_built_for(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = fake_root(tmp)
+            archive = package_installers.linux_package(root, '2.1.0', 'arm64')
+            self.assertEqual(archive.name, 'GuildSync-Voice-Mute-2.1.0-Linux-arm64.deb')
+            fields = subprocess.run(
+                ['dpkg-deb', '--field', str(archive)],
+                check=True, capture_output=True, text=True,
+            ).stdout
+            self.assertIn('Architecture: arm64', fields)
+
+
+class ArchitectureNameTest(unittest.TestCase):
+    def test_a_name_that_is_not_a_debian_architecture_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = fake_root(tmp)
+            for architecture in ('amd64/../../evil', 'AMD64', '', 'arm 64'):
+                with self.assertRaises(ValueError):
+                    package_installers.linux_package(root, '1.0.0', architecture)
 
 
 if __name__ == '__main__':
