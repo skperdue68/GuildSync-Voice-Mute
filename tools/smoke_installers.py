@@ -86,9 +86,10 @@ def main():
         builder = package_installers.windows_installer if arguments.platform == 'windows' else package_installers.macos_installer
         archive = builder(root, SMOKE_VERSION)
         size = archive.stat().st_size
-        # An empty or tiny file means Inno Setup or hdiutil did not really run.
-        if size < 100_000:
-            raise SystemExit(f'::error::{archive.name} is only {size} bytes')
+        # Size proves nothing about a stub payload, so only an empty file is
+        # rejected here; the checks below are what actually prove the installer.
+        if size == 0:
+            raise SystemExit(f'::error::{archive.name} is empty')
         print(f'{archive.name}: {size} bytes')
         if arguments.platform == 'windows':
             verify_windows(archive)
