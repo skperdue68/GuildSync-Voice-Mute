@@ -95,6 +95,32 @@ jobs:
         run: |
           go build ./...
           go test ./...
+  # The real installers are only built on a release. Package a stub payload on
+  # each native runner so the Windows and macOS paths are proven by a pull
+  # request instead of by the first release that needs them.
+  installers:
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Package a stub payload with the ${{ matrix.platform }} installer
+        shell: bash
+        run: python tools/smoke_installers.py ${{ matrix.platform }}
   build:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     strategy:

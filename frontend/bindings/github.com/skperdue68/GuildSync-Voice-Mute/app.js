@@ -13,7 +13,8 @@ import * as $models from "./models.js";
 /**
  * CheckForUpdate asks GitHub for the newest published release. The latest
  * endpoint already skips drafts and pre-releases, so a pre-release is never
- * offered as an update.
+ * offered. When the release is newer, its installer for this platform is
+ * downloaded and opened.
  * @returns {$CancellablePromise<$models.UpdateInfo>}
  */
 export function CheckForUpdate() {
