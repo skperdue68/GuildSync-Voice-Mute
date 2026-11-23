@@ -56,24 +56,20 @@ def deb_control(version, installed_kb, architecture='amd64'):
     return '\n'.join(fields) + '\n'
 
 
-def _copy_binary(root, destination):
-    source = Path(root) / 'bin' / BINARY
-    if not source.is_file():
-        raise ValueError(f'the Linux payload is missing: {source}')
-    shutil.copy2(source, destination)
-    Path(destination).chmod(0o755)
-
-
 def linux_package(root, version, architecture='amd64'):
     """Build a .deb that installs the binary, a desktop entry and an icon."""
     if not shutil.which('dpkg-deb'):
         raise ValueError('dpkg-deb is required to build the .deb package')
     root = Path(root)
-    stage = Path(tempfile.mkdtemp())
-    try:
+    payload = root / 'bin' / BINARY
+    if not payload.is_file():
+        raise ValueError(f'the Linux payload is missing: {payload}')
+    with tempfile.TemporaryDirectory() as staging:
+        stage = Path(staging)
         binary = stage / 'usr' / 'bin' / SLUG
         binary.parent.mkdir(parents=True)
-        _copy_binary(root, binary)
+        shutil.copy2(payload, binary)
+        binary.chmod(0o755)
 
         entry = stage / 'usr' / 'share' / 'applications' / f'{SLUG}.desktop'
         entry.parent.mkdir(parents=True)
@@ -91,14 +87,10 @@ def linux_package(root, version, architecture='amd64'):
         archive = release_dir(root) / f'{BINARY}-{version}-Linux.deb'
         subprocess.run(['dpkg-deb', '--build', '--root-owner-group', str(stage), str(archive)], check=True)
         return archive
-    finally:
-        shutil.rmtree(stage, ignore_errors=True)
 
 
 def macos_installer(root, version):
     """Build a .dmg holding the .app bundle and an Applications link."""
-    if not shutil.which('hdiutil'):
-        raise ValueError('a .dmg can only be built on macOS (hdiutil is missing)')
     root = Path(root)
     bundles = sorted((root / 'bin').glob('*.app'))
     if not bundles:
@@ -109,8 +101,10 @@ def macos_installer(root, version):
     executables = bundle / 'Contents' / 'MacOS'
     if not executables.is_dir() or not any(path.is_file() for path in executables.iterdir()):
         raise ValueError(f'{bundle.name} has no executable in Contents/MacOS')
-    stage = Path(tempfile.mkdtemp())
-    try:
+    if not shutil.which('hdiutil'):
+        raise ValueError('a .dmg can only be built on macOS (hdiutil is missing)')
+    with tempfile.TemporaryDirectory() as staging:
+        stage = Path(staging)
         shutil.copytree(bundle, stage / bundle.name, symlinks=True)
         (stage / 'Applications').symlink_to('/Applications')
         archive = release_dir(root) / f'{BINARY}-{version}-macOS.dmg'
@@ -120,13 +114,10 @@ def macos_installer(root, version):
             check=True,
         )
         return archive
-    finally:
-        shutil.rmtree(stage, ignore_errors=True)
 
 
 def find_iscc():
-    override = os.environ.get('INNO_SETUP_ISCC')
-    candidates = [override, shutil.which('ISCC.exe'), shutil.which('iscc'), *ISCC_CANDIDATES]
+    candidates = (os.environ.get('INNO_SETUP_ISCC'), shutil.which('ISCC.exe'), shutil.which('iscc'), *ISCC_CANDIDATES)
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
             return Path(candidate)

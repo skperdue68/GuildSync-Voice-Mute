@@ -38,7 +38,7 @@ See [platform support and permissions](docs/platform-support.md), including Linu
 
 ## Updates
 
-Choose **Check for updates** to compare this build with the newest published GitHub release. The companion never downloads or runs an installer itself; when a newer version exists, **Open download page** opens that release page in your browser so you can fetch the zip for your platform. The check is user-initiated and only contacts the GitHub releases API.
+Choose **Check for updates** to compare this build with the newest published GitHub release. The check is user-initiated and only contacts the GitHub releases API. When a newer version exists, the companion downloads that release's installer **for the platform you are running** — `...-Windows-Setup.exe`, `...-macOS.dmg` or `...-Linux.deb` — into your Downloads folder, checks it against the SHA-256 digest GitHub publishes for the file, and opens it. Quit the companion before finishing the install and start the new version afterwards. **Open download page** stays available and opens only that release page on GitHub, so it remains the fallback when a release has no installer for your platform or the download fails; the status line says which happened.
 
 ## Saved login and settings
 
@@ -65,5 +65,5 @@ wails3 build
 
 On Ubuntu 24.04, install `build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev`. macOS needs Xcode Command Line Tools. Development builds use `wails3 dev`. Go methods exposed to the window are called through generated bindings in `frontend/bindings`; run `wails3 generate bindings` after changing exported methods.
 
-Pull requests run tests only. Ordinary pushes do not build the application. Publish a GitHub release with a tag such as `v1.0.1` to build Windows, macOS and Linux archives and attach them to that release. The release tag stamps `build/config.yml`, the Windows and macOS bundle metadata, frontend package metadata, archive filenames and the visible version before building. The build output lands in `bin/`. The version appears in the window title and below the app heading. Local source builds use the version in `build/config.yml`; run `python tools/set-release-version.py v1.0.1` to change it locally. Product changes are reviewed through pull requests.
+Pull requests run tests only, plus a smoke job that packages a stub payload with the real Windows and macOS installers on their native runners. Ordinary pushes do not build the application. Publish a GitHub release with a tag such as `v1.0.1` to build Windows, macOS and Linux archives and attach them to that release. The release tag stamps `build/config.yml`, the Windows and macOS bundle metadata, frontend package metadata, archive filenames and the visible version before building. The build output lands in `bin/`. The version appears in the window title and below the app heading. Local source builds use the version in `build/config.yml`; run `python tools/set-release-version.py v1.0.1` to change it locally. Product changes are reviewed through pull requests.
 

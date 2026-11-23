@@ -36,6 +36,11 @@ type App struct {
 	scheduleUnmute      func(time.Duration, func()) func()
 	emitEdge            func(bool)
 	emitStatus          func(string)
+
+	// assetBase and openPath let tests stand in for GitHub and the desktop's
+	// installer handler; both fall back to the real ones when empty or nil.
+	assetBase string
+	openPath  func(string) error
 }
 
 func NewApp() *App {

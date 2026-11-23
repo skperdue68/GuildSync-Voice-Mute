@@ -177,8 +177,9 @@ export class ShortcutAvailability {
 
 /**
  * UpdateInfo is what the UI needs from a check: whether a newer release exists,
- * where to read about it and a sentence to show. Releases are unsigned archives,
- * so the app opens the release page instead of downloading and running anything.
+ * where to read about it and a sentence to show. A check that finds a newer
+ * release also downloads that platform's installer and opens it, so the message
+ * says what was downloaded and what to do next.
  */
 export class UpdateInfo {
     /**

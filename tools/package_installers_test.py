@@ -4,6 +4,7 @@ The .deb path is exercised for real when dpkg-deb is available, because the
 package layout and control file are the parts a broken installer would fail at
 before a user ever gets to run one.
 """
+import os
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import package_installers
+import smoke_installers
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -63,6 +65,21 @@ class InstallerErrorsTest(unittest.TestCase):
                 package_installers.macos_installer(tmp, '1.0.0')
             with self.assertRaises(ValueError):
                 package_installers.windows_installer(tmp, '1.0.0', iscc=sys.executable)
+
+
+class StubPayloadTest(unittest.TestCase):
+    def test_windows_stub_carries_what_the_packager_reads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = smoke_installers.stub_root(tmp, 'windows')
+            self.assertTrue((root / 'bin' / f'{package_installers.BINARY}.exe').is_file())
+            self.assertTrue((root / 'build' / 'windows' / 'installer.iss').is_file())
+
+    def test_macos_stub_is_a_bundle_with_an_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = smoke_installers.stub_root(tmp, 'macos')
+            executable = root / 'bin' / f'{package_installers.BINARY}.app' / 'Contents' / 'MacOS' / package_installers.BINARY
+            self.assertTrue(executable.is_file())
+            self.assertTrue(os.access(executable, os.X_OK))
 
 
 @unittest.skipUnless(shutil.which('dpkg-deb'), 'dpkg-deb is not installed')
