@@ -1,8 +1,9 @@
 """Tests for the installer packager.
 
-The .deb path is exercised for real when dpkg-deb is available, because the
-package layout and control file are the parts a broken installer would fail at
-before a user ever gets to run one.
+The packagers are driven with a stand-in for the tool that does the final step,
+because those tools only exist on the platform a release builds on. What is
+checked here is the command each packager builds and the name it publishes,
+which is what the updater matches at download time.
 """
 import os
 import re
@@ -63,21 +64,6 @@ class MacBundleTaskTest(unittest.TestCase):
         )
 
 
-class ControlFileTest(unittest.TestCase):
-    def test_names_the_package_version_and_runtime_dependencies(self):
-        control = package_installers.deb_control('2.1.0', 512)
-        self.assertIn('Package: guildsync-voice-mute', control)
-        self.assertIn('Version: 2.1.0', control)
-        self.assertIn('Depends: libgtk-4-1, libwebkitgtk-6.0-4', control)
-        self.assertIn('Installed-Size: 512', control)
-
-    def test_description_continuation_lines_are_indented(self):
-        lines = package_installers.deb_control('1.0.0', 10).splitlines()
-        description = lines.index('Description: GuildSync voice-channel mute companion')
-        for line in lines[description + 1:]:
-            self.assertTrue(line.startswith(' '), f'not a continuation line: {line!r}')
-
-
 class DesktopEntryTest(unittest.TestCase):
     def test_points_at_the_installed_binary_and_icon(self):
         text = (ROOT / 'build' / 'linux' / f'{package_installers.SLUG}.desktop').read_text()
@@ -113,48 +99,55 @@ class StubPayloadTest(unittest.TestCase):
             self.assertTrue(os.access(executable, os.X_OK))
 
 
-@unittest.skipUnless(shutil.which('dpkg-deb'), 'dpkg-deb is not installed')
-class DebBuildTest(unittest.TestCase):
-    def test_deb_installs_the_binary_desktop_entry_and_icon(self):
+class AppImageBuildTest(unittest.TestCase):
+    def test_publishes_an_appimage_named_for_the_architecture(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = fake_root(tmp)
-            archive = package_installers.linux_package(root, '2.1.0')
-            self.assertEqual(archive.name, 'GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb')
+            commands = []
 
-            contents = subprocess.run(
-                ['dpkg-deb', '--contents', str(archive)],
-                check=True, capture_output=True, text=True,
-            ).stdout
-            self.assertIn('./usr/bin/guildsync-voice-mute', contents)
-            self.assertIn('./usr/share/applications/guildsync-voice-mute.desktop', contents)
-            self.assertIn('./usr/share/icons/hicolor/256x256/apps/guildsync-voice-mute.png', contents)
+            def fake_run(command, check):
+                commands.append(command)
+                # The generator writes the file it names after the binary.
+                (root / 'release' / f'{package_installers.SLUG}-x86_64.AppImage').write_bytes(b'AppImage')
+                return subprocess.CompletedProcess(command, 0)
 
-            fields = subprocess.run(
-                ['dpkg-deb', '--field', str(archive)],
-                check=True, capture_output=True, text=True,
-            ).stdout
-            self.assertIn('Package: guildsync-voice-mute', fields)
-            self.assertIn('Version: 2.1.0', fields)
-            self.assertIn('Architecture: amd64', fields)
-            self.assertIn('Depends: libgtk-4-1, libwebkitgtk-6.0-4', fields)
+            archive = package_installers.linux_package(root, '2.1.0', run=fake_run)
+            self.assertEqual(archive.name, 'GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage')
+            self.assertTrue(os.access(archive, os.X_OK))
+            self.assertFalse((root / 'release' / f'{package_installers.SLUG}-x86_64.AppImage').exists())
 
-    def test_deb_is_named_and_labelled_for_the_architecture_it_was_built_for(self):
+            command = commands[0]
+            self.assertEqual(command[:3], ['wails3', 'generate', 'appimage'])
+            # The binary is staged under the name the desktop entry launches, so
+            # the AppImage's own AppRun matches it.
+            self.assertEqual(Path(command[command.index('-binary') + 1]).name, package_installers.SLUG)
+            self.assertEqual(Path(command[command.index('-desktopfile') + 1]).name, f'{package_installers.SLUG}.desktop')
+            # linuxdeploy resolves the icon by the desktop entry's Icon= name.
+            self.assertEqual(Path(command[command.index('-icon') + 1]).name, f'{package_installers.SLUG}.png')
+            self.assertEqual(Path(command[command.index('-outputdir') + 1]), root / 'release')
+
+    def test_arm64_keeps_the_architecture_the_generator_names(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = fake_root(tmp)
-            archive = package_installers.linux_package(root, '2.1.0', 'arm64')
-            self.assertEqual(archive.name, 'GuildSync-Voice-Mute-2.1.0-Linux-arm64.deb')
-            fields = subprocess.run(
-                ['dpkg-deb', '--field', str(archive)],
-                check=True, capture_output=True, text=True,
-            ).stdout
-            self.assertIn('Architecture: arm64', fields)
+
+            def fake_run(command, check):
+                (root / 'release' / f'{package_installers.SLUG}-aarch64.AppImage').write_bytes(b'AppImage')
+
+            archive = package_installers.linux_package(root, '2.1.0', 'aarch64', run=fake_run)
+            self.assertEqual(archive.name, 'GuildSync-Voice-Mute-2.1.0-Linux-aarch64.AppImage')
+
+    def test_a_missing_output_is_reported_instead_of_publishing_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = fake_root(tmp)
+            with self.assertRaises(ValueError):
+                package_installers.linux_package(root, '2.1.0', run=lambda command, check: None)
 
 
 class ArchitectureNameTest(unittest.TestCase):
-    def test_a_name_that_is_not_a_debian_architecture_is_refused(self):
+    def test_an_architecture_the_generator_does_not_build_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = fake_root(tmp)
-            for architecture in ('amd64/../../evil', 'AMD64', '', 'arm 64'):
+            for architecture in ('amd64', 'x86_64/../../evil', 'AMD64', '', 'i686'):
                 with self.assertRaises(ValueError):
                     package_installers.linux_package(root, '1.0.0', architecture)
 

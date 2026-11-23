@@ -23,10 +23,12 @@ export function CheckForUpdate() {
 }
 
 /**
- * DownloadUpdate fetches the installer the last check picked for this platform,
- * verifies its digest and hands it to the desktop. The returned sentence is what
- * the UI shows; a refused download still returns one, because the release page
- * is then the way forward. An error means no check has offered an update yet.
+ * DownloadUpdate fetches the installer the newest release publishes for this
+ * platform, verifies its digest and hands it to the desktop. It looks the
+ * release up again rather than trusting an earlier check, so it shares no state
+ * with the check that fills the window. The returned sentence is what the UI
+ * shows; a refused download still returns one, because the release page is then
+ * the way forward.
  * @returns {$CancellablePromise<string>}
  */
 export function DownloadUpdate() {

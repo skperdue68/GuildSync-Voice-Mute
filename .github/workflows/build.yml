@@ -221,9 +221,10 @@ jobs:
           case "$PLATFORM_NAME" in
             Windows) python tools/package_installers.py windows --version "$VERSION" ;;
             macOS) python tools/package_installers.py macos --version "$VERSION" ;;
-            # A .deb is built for one machine only, so it is named for the
-            # architecture of the runner that built it.
-            Linux) python tools/package_installers.py linux --version "$VERSION" --arch "$(dpkg --print-architecture)" ;;
+            # An AppImage carries the GTK/WebKitGTK runtime, so one file runs on
+            # any distribution; it is still built for the runner's architecture,
+            # which ends up in the name.
+            Linux) python tools/package_installers.py linux --version "$VERSION" --arch "$(uname -m)" ;;
           esac
       - uses: actions/upload-artifact@v7
         with:
@@ -248,7 +249,7 @@ jobs:
         shell: bash
         run: |
           status=0
-          for pattern in 'release/*-Windows-Setup.exe' 'release/*-macOS.dmg' 'release/*-Linux-*.deb'; do
+          for pattern in 'release/*-Windows-Setup.exe' 'release/*-macOS.dmg' 'release/*-Linux-*.AppImage'; do
             if compgen -G "$pattern" > /dev/null; then
               echo "found $pattern"
             else
