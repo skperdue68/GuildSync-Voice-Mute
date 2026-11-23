@@ -188,6 +188,12 @@ jobs:
           else
             wails3 build
           fi
+      # The build writes a bare binary, so the .app bundle the installer packs
+      # has to be assembled before it can be signed or turned into a .dmg.
+      - name: Assemble the macOS app bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: wails3 task darwin:package
       - name: Ad-hoc sign macOS bundle
         if: runner.os == 'macOS'
         shell: bash

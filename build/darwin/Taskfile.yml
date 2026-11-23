@@ -53,6 +53,29 @@ tasks:
       - wails3 tool lipo -output "{{.BIN_DIR}}/{{.APP_NAME}}" -input "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" -input "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
       - rm -f "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
 
+  package:
+    summary: Assembles the .app bundle that the .dmg installer ships
+    # `go build` only writes a bare binary, so nothing else creates the bundle
+    # the installer and the codesign task read.
+    deps:
+      - task: common:generate:icons
+    cmds:
+      - |
+        set -eu
+        if [ ! -f "{{.BIN_DIR}}/{{.APP_NAME}}" ]; then
+          echo "the application binary is missing: run the darwin build task first" >&2
+          exit 1
+        fi
+        bundle="{{.BIN_DIR}}/{{.APP_NAME}}.app"
+        rm -rf "$bundle"
+        mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
+        cp build/darwin/Info.plist "$bundle/Contents/Info.plist"
+        # Info.plist names `icons` as the bundle icon, so the file keeps that
+        # name rather than the .icns name it has in the repository.
+        cp build/darwin/icons.icns "$bundle/Contents/Resources/icons.icns"
+        cp "{{.BIN_DIR}}/{{.APP_NAME}}" "$bundle/Contents/MacOS/{{.APP_NAME}}"
+        printf 'APPL????' > "$bundle/Contents/PkgInfo"
+
   codesign:
     summary: Ad-hoc signs the built bundle so macOS sees a consistent app
     cmds:
