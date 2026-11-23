@@ -28,13 +28,22 @@ const (
 )
 
 // UpdateInfo is what the UI needs from a check: whether a newer release exists,
-// where to read about it and a sentence to show. A check that finds a newer
-// release also downloads that platform's installer and opens it, so the message
-// says what was downloaded and what to do next.
+// the version on offer, the release page and — when that release published one
+// for this machine — a direct link to this platform's installer. Checking never
+// downloads anything; DownloadUpdate does that once the user asks.
 type UpdateInfo struct {
 	Available bool   `json:"available"`
+	Version   string `json:"version"`
 	PageURL   string `json:"page_url"`
+	AssetURL  string `json:"asset_url"`
 	Message   string `json:"message"`
+}
+
+// pendingUpdate is the release the last check found. The installer is a pointer
+// because a release can be newer without publishing one for this platform.
+type pendingUpdate struct {
+	version string
+	asset   *updateAsset
 }
 
 // versionParts compares dotted versions, ignoring a leading "v" and any
@@ -236,35 +245,44 @@ func (a *App) openInstaller(path string) error {
 	return openDownloaded(path)
 }
 
-// downloadUpdate fetches the installer for this platform from a newer release
-// and returns the sentence the UI shows. A failed download is reported in that
-// sentence rather than as an error, because the release page is then the way
-// forward and the caller keeps it.
-func (a *App) downloadUpdate(version string, assets []updateAsset) string {
-	available := "Version " + version + " is available."
-	base := a.assetBase
-	if base == "" {
-		base = updateAssetBase
-	}
-	asset, ok := pickUpdateAsset(assets, runtime.GOOS, runtime.GOARCH, base)
-	if !ok {
-		return available + " That release has no installer for this platform; open the download page instead."
-	}
-	path, err := fetchUpdateAsset(asset, downloadDir())
-	if err != nil {
-		return available + " The download could not be completed (" + err.Error() + "). Open the download page instead."
-	}
-	if err := a.openInstaller(path); err != nil {
-		return available + " Downloaded " + asset.Name + " to " + path + "; open it to install, then start the new version."
-	}
-	return available + " Downloaded " + asset.Name + " to " + path + " and opened it. Quit the companion before installing, then start the new version."
+// rememberUpdate stores what the last check found, so DownloadUpdate fetches
+// the installer the user was offered instead of deriving a new one.
+func (a *App) rememberUpdate(pending *pendingUpdate) {
+	a.updateMu.Lock()
+	a.pendingUpdate = pending
+	a.updateMu.Unlock()
 }
 
-// CheckForUpdate asks GitHub for the newest published release. The latest
-// endpoint already skips drafts and pre-releases, so a pre-release is never
-// offered. When the release is newer, its installer for this platform is
-// downloaded and opened.
-func (a *App) CheckForUpdate() (UpdateInfo, error) {
+// DownloadUpdate fetches the installer the last check picked for this platform,
+// verifies its digest and hands it to the desktop. The returned sentence is what
+// the UI shows; a refused download still returns one, because the release page
+// is then the way forward. An error means no check has offered an update yet.
+func (a *App) DownloadUpdate() (string, error) {
+	a.updateMu.Lock()
+	pending := a.pendingUpdate
+	a.updateMu.Unlock()
+	if pending == nil {
+		return "", errors.New("no update has been found to download")
+	}
+	available := "Version " + pending.version + " is available."
+	if pending.asset == nil {
+		return available + " That release has no installer for this platform; open the download page instead.", nil
+	}
+	asset := *pending.asset
+	path, err := fetchUpdateAsset(asset, downloadDir())
+	if err != nil {
+		return available + " The download could not be completed (" + err.Error() + "). Open the download page instead.", nil
+	}
+	if err := a.openInstaller(path); err != nil {
+		return available + " Downloaded " + asset.Name + " to " + path + "; open it to install, then start the new version.", nil
+	}
+	return available + " Downloaded " + asset.Name + " to " + path + " and opened it. Quit the companion before installing, then start the new version.", nil
+}
+
+// lookupUpdate asks GitHub for the newest published release and describes it.
+// The latest endpoint already skips drafts and pre-releases, so a pre-release is
+// never offered.
+func (a *App) lookupUpdate() (UpdateInfo, *pendingUpdate, error) {
 	info := UpdateInfo{PageURL: updateReleaseURL}
 	endpoint := a.updateURL
 	if endpoint == "" {
@@ -272,17 +290,17 @@ func (a *App) CheckForUpdate() (UpdateInfo, error) {
 	}
 	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
-		return info, err
+		return info, nil, err
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("User-Agent", "GuildSync-Voice-Mute/"+productVersion())
 	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
 	if err != nil {
-		return info, fmt.Errorf("check for updates: %w", err)
+		return info, nil, fmt.Errorf("check for updates: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return info, fmt.Errorf("check for updates: %s", response.Status)
+		return info, nil, fmt.Errorf("check for updates: %s", response.Status)
 	}
 	var release struct {
 		TagName string `json:"tag_name"`
@@ -294,7 +312,7 @@ func (a *App) CheckForUpdate() (UpdateInfo, error) {
 		} `json:"assets"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&release); err != nil {
-		return info, fmt.Errorf("check for updates: %w", err)
+		return info, nil, fmt.Errorf("check for updates: %w", err)
 	}
 	latest := strings.TrimPrefix(strings.TrimSpace(release.TagName), "v")
 	switch {
@@ -302,6 +320,7 @@ func (a *App) CheckForUpdate() (UpdateInfo, error) {
 		info.Message = "No published release was found."
 	case compareVersions(latest, productVersion()) > 0:
 		info.Available = true
+		info.Version = latest
 		if usableReleasePage(release.HTMLURL) {
 			info.PageURL = release.HTMLURL
 		}
@@ -309,11 +328,32 @@ func (a *App) CheckForUpdate() (UpdateInfo, error) {
 		for _, asset := range release.Assets {
 			assets = append(assets, updateAsset{Name: asset.Name, URL: asset.URL, Digest: asset.Digest})
 		}
-		info.Message = a.downloadUpdate(latest, assets)
+		base := a.assetBase
+		if base == "" {
+			base = updateAssetBase
+		}
+		pending := &pendingUpdate{version: latest}
+		if asset, ok := pickUpdateAsset(assets, runtime.GOOS, runtime.GOARCH, base); ok {
+			pending.asset = &asset
+			info.AssetURL = asset.URL
+			info.Message = "Version " + latest + " is available."
+		} else {
+			info.Message = "Version " + latest + " is available, but that release has no installer for this platform."
+		}
+		return info, pending, nil
 	default:
 		info.Message = "You are running the latest release."
 	}
-	return info, nil
+	return info, nil, nil
+}
+
+// CheckForUpdate asks GitHub for the newest published release. It downloads
+// nothing: the UI shows the version and links to this platform's installer, and
+// DownloadUpdate fetches it when the user asks.
+func (a *App) CheckForUpdate() (UpdateInfo, error) {
+	info, pending, err := a.lookupUpdate()
+	a.rememberUpdate(pending)
+	return info, err
 }
 
 // OpenReleasePage opens a GuildSync release page in the system browser, refusing
