@@ -51,6 +51,23 @@ def zip_installer(archive):
     return download
 
 
+def build_installer(root, platform, version, architecture='x86_64', iscc=None):
+    """Build one platform's installer and publish it inside its zip.
+
+    A release runs exactly this, so the archive a smoke test builds is the one
+    the updater downloads rather than a bare installer shaped like it.
+    """
+    if platform == 'linux':
+        archive = linux_package(root, version, architecture)
+    elif platform == 'macos':
+        archive = macos_installer(root, version)
+    elif platform == 'windows':
+        archive = windows_installer(root, version, iscc)
+    else:
+        raise ValueError(f'{platform!r} is not a platform installer')
+    return archive, zip_installer(archive)
+
+
 def appimage_command(binary, icon, desktop, output, build):
     """The wails3 invocation that bundles one AppImage."""
     return [
@@ -173,13 +190,9 @@ def main():
     root = Path(__file__).resolve().parents[1]
     try:
         version = metadata.validate(root, arguments.version)
-        if arguments.platform == 'linux':
-            archive = linux_package(root, version, arguments.arch)
-        elif arguments.platform == 'macos':
-            archive = macos_installer(root, version)
-        else:
-            archive = windows_installer(root, version, arguments.iscc)
-        download = zip_installer(archive)
+        archive, download = build_installer(
+            root, arguments.platform, version, arguments.arch, arguments.iscc
+        )
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f'::error::installer packaging failed: {error}')
         return 1

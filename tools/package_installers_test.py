@@ -14,6 +14,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import package_installers
@@ -75,6 +76,11 @@ class DesktopEntryTest(unittest.TestCase):
 
 
 class InstallerErrorsTest(unittest.TestCase):
+    def test_an_unknown_platform_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):
+                package_installers.build_installer(tmp, 'linux-arm', '1.0.0')
+
     def test_missing_payload_is_reported_before_any_tool_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):
@@ -154,6 +160,48 @@ class InstallerZipTest(unittest.TestCase):
             with zipfile.ZipFile(download) as bundle:
                 self.assertEqual(bundle.namelist(), [archive.name])
                 self.assertEqual(bundle.read(archive.name), b'setup payload')
+
+
+class BuildInstallerTest(unittest.TestCase):
+    def test_publishes_the_zip_of_the_installer_the_packager_wrote(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / 'GuildSync-Voice-Mute-1.0.0-Linux-x86_64.AppImage'
+            archive.write_bytes(b'AppImage')
+            with mock.patch.object(package_installers, 'linux_package', return_value=archive):
+                built, download = package_installers.build_installer(Path(tmp), 'linux', '1.0.0')
+            self.assertEqual(built, archive)
+            self.assertEqual(download.name, archive.name + '.zip')
+            with zipfile.ZipFile(download) as bundle:
+                self.assertEqual(bundle.namelist(), [archive.name])
+
+
+class SmokeZipTest(unittest.TestCase):
+    """The pull-request smoke job proves the zip the updater downloads."""
+
+    def test_the_smoke_packages_through_the_release_path(self):
+        stub = Path('stub')
+        with mock.patch.object(
+            package_installers, 'build_installer', return_value=('installer', 'zip')
+        ) as builder:
+            self.assertEqual(smoke_installers.package(stub, 'macos'), ('installer', 'zip'))
+        builder.assert_called_once_with(stub, 'macos', smoke_installers.SMOKE_VERSION)
+
+    def test_the_installer_is_unpacked_for_verification(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / 'GuildSync-Voice-Mute-0.0.1-Windows-Setup.exe'
+            archive.write_bytes(b'setup payload')
+            unpacked = smoke_installers.unpack(package_installers.zip_installer(archive), Path(tmp) / 'unpacked')
+            self.assertEqual(unpacked.name, archive.name)
+            self.assertEqual(unpacked.read_bytes(), archive.read_bytes())
+
+    def test_a_zip_holding_more_than_the_installer_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            download = Path(tmp) / 'installer.zip'
+            with zipfile.ZipFile(download, 'w') as bundle:
+                bundle.writestr('installer', b'one')
+                bundle.writestr('readme', b'two')
+            with self.assertRaises(SystemExit):
+                smoke_installers.unpack(download, Path(tmp) / 'unpacked')
 
 
 class ArchitectureNameTest(unittest.TestCase):
