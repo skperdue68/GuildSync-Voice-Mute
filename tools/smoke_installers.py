@@ -1,14 +1,14 @@
-"""Prove each platform's installer and its published zip on its own platform.
+"""Prove each platform's installer on its own platform.
 
 The pull-request gate builds no application, so the installer paths are only
 exercised on a release. This script builds the payload each packager reads,
-packs it through the same build-installer-and-zip step a release runs, and then
-verifies the copy extracted from the zip it published. Windows and macOS package
-a stub payload, because their packagers only need a file of the right shape;
-Linux packages the application the job just built, because the AppImage bundler
-reads the binary's linked libraries. Run it as
-`python tools/smoke_installers.py windows` on a Windows runner, `... macos` on a
-macOS runner and `... linux` on an Ubuntu runner with GTK4/WebKitGTK installed.
+packs it through the same build-installer step a release runs, and then verifies
+the installer that step published. Windows and macOS package a stub payload,
+because their packagers only need a file of the right shape; Linux packages the
+application the job just built, because the AppImage bundler reads the binary's
+linked libraries. Run it as `python tools/smoke_installers.py windows` on a
+Windows runner, `... macos` on a macOS runner and `... linux` on an Ubuntu
+runner with GTK4/WebKitGTK installed.
 """
 import argparse
 import os
@@ -16,7 +16,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -56,31 +55,11 @@ def payload_root(workspace, platform):
 
 
 def package(root, platform):
-    """Build the installer and the zip a release publishes."""
+    """Build the installer a release publishes."""
     if platform == 'linux':
         # The generator names the AppImage after the architecture it built.
         return package_installers.build_installer(root, platform, SMOKE_VERSION, os.uname().machine)
     return package_installers.build_installer(root, platform, SMOKE_VERSION)
-
-
-def unpack(download, destination):
-    """Extract the published zip and return the one installer it holds.
-
-    The update hands the user this zip, so the copy that gets verified is the
-    one a user ends up with, not the installer the packager left behind.
-    """
-    with zipfile.ZipFile(download) as bundle:
-        names = bundle.namelist()
-        if len(names) != 1:
-            raise SystemExit(f'::error::{download.name} holds {names}, not one installer')
-        info = bundle.getinfo(names[0])
-        extracted = Path(bundle.extract(names[0], destination))
-    # An AppImage has to stay executable, and zipfile does not restore the mode
-    # the archiver recorded; an unzip on the user's machine does.
-    mode = info.external_attr >> 16
-    if mode:
-        extracted.chmod(mode)
-    return extracted
 
 
 def verify_windows(archive):
@@ -153,25 +132,19 @@ def main():
     arguments = parser.parse_args()
     with tempfile.TemporaryDirectory() as workspace:
         root = payload_root(workspace, arguments.platform)
-        archive, download = package(root, arguments.platform)
+        archive = package(root, arguments.platform)
         size = archive.stat().st_size
         # Size proves nothing about a stub payload, so only an empty file is
         # rejected here; the checks below are what actually prove the installer.
         if size == 0:
             raise SystemExit(f'::error::{archive.name} is empty')
         print(f'{archive.name}: {size} bytes')
-        unpacked = unpack(download, Path(workspace) / 'unpacked')
-        if unpacked.name != archive.name:
-            raise SystemExit(f'::error::{download.name} holds {unpacked.name}, not {archive.name}')
-        if unpacked.read_bytes() != archive.read_bytes():
-            raise SystemExit(f'::error::{unpacked.name} in {download.name} is not the built installer')
-        print(f'{download.name}: {download.stat().st_size} bytes, holding {unpacked.name}')
         if arguments.platform == 'windows':
-            verify_windows(unpacked)
+            verify_windows(archive)
         elif arguments.platform == 'macos':
-            verify_macos(unpacked)
+            verify_macos(archive)
         else:
-            verify_linux(unpacked)
+            verify_linux(archive)
     return 0
 
 
