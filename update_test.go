@@ -199,7 +199,12 @@ func TestFetchUpdateAssetVerifiesTheDigest(t *testing.T) {
 
 func TestMakeExecutableSetsTheBitOnLinux(t *testing.T) {
 	// An AppImage is run as a program, so the saved copy has to be executable or
-	// opening it fails with "Permission denied".
+	// opening it fails with "Permission denied". Windows records no executable
+	// bit at all — a chmod there leaves every writable file at 0666 — so this
+	// can only be checked on the platform that reads the bit.
+	if runtime.GOOS != "linux" {
+		t.Skip("only Linux keeps the executable bit in the file mode")
+	}
 	path := filepath.Join(t.TempDir(), "GuildSync-Voice-Mute-9.9.9-Linux-x86_64.AppImage")
 	if err := os.WriteFile(path, []byte("appimage payload"), 0o644); err != nil {
 		t.Fatal(err)
