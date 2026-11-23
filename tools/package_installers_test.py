@@ -5,6 +5,7 @@ package layout and control file are the parts a broken installer would fail at
 before a user ever gets to run one.
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,36 @@ def fake_root(tmp):
         root / 'build' / 'linux' / f'{package_installers.SLUG}.desktop',
     )
     return root
+
+
+class MacBundleTaskTest(unittest.TestCase):
+    """The .app bundle is assembled by the darwin Taskfile, not by `go build`.
+
+    A release failed with "no .app bundle in bin/" because the build wrote only
+    a bare binary, so these assert the builder, the bundle metadata and the
+    workflow still agree on where the DMG packager reads it from.
+    """
+
+    def test_taskfile_writes_the_bundle_the_packager_reads(self):
+        text = (ROOT / 'build' / 'darwin' / 'Taskfile.yml').read_text()
+        self.assertIn('bundle="{{.BIN_DIR}}/{{.APP_NAME}}.app"', text)
+        self.assertIn('"$bundle/Contents/Info.plist"', text)
+        self.assertIn('"$bundle/Contents/Resources/icons.icns"', text)
+        self.assertIn('"$bundle/Contents/MacOS/{{.APP_NAME}}"', text)
+
+    def test_bundle_executable_is_the_name_the_packager_requires(self):
+        plist = (ROOT / 'build' / 'darwin' / 'Info.plist').read_text()
+        executable = re.search(r'<key>CFBundleExecutable</key>\s*<string>([^<]+)</string>', plist)
+        self.assertIsNotNone(executable)
+        self.assertEqual(executable.group(1), package_installers.BINARY)
+
+    def test_workflow_builds_the_bundle_before_signing_it(self):
+        text = (ROOT / '.github' / 'workflows' / 'build.yml').read_text()
+        self.assertIn('wails3 task darwin:package', text)
+        self.assertLess(
+            text.index('wails3 task darwin:package'),
+            text.index('wails3 task darwin:codesign'),
+        )
 
 
 class ControlFileTest(unittest.TestCase):
