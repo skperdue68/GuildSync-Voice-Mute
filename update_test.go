@@ -193,7 +193,46 @@ func TestFetchUpdateAssetVerifiesTheDigest(t *testing.T) {
 	}
 }
 
-func TestCheckForUpdateDownloadsTheInstallersForThisPlatform(t *testing.T) {
+func TestCheckForUpdateOffersTheInstallerWithoutDownloadingIt(t *testing.T) {
+	suffix := updateSuffix(runtime.GOOS, runtime.GOARCH)
+	if suffix == "" {
+		t.Skip("no installer is published for this platform")
+	}
+	name := "GuildSync-Voice-Mute-9.9.9" + suffix
+	assetURL := updateAssetBase + "v9.9.9/" + name
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"tag_name":"v9.9.9","html_url":%q,"assets":[{"name":%q,"browser_download_url":%q}]}`,
+			updateReleaseURL+"/tag/v9.9.9", name, assetURL)
+	}))
+	defer server.Close()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := os.Mkdir(filepath.Join(home, "Downloads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	opened := ""
+	app := &App{updateURL: server.URL, openPath: func(path string) error { opened = path; return nil }}
+	info, err := app.CheckForUpdate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Available || info.Version != "9.9.9" || info.AssetURL != assetURL {
+		t.Fatalf("%+v", info)
+	}
+	if info.Message != "Version 9.9.9 is available." {
+		t.Fatalf("message = %q", info.Message)
+	}
+	// Detecting an update must never start a download or open anything.
+	if opened != "" {
+		t.Fatalf("the check opened %q", opened)
+	}
+	if entries, err := os.ReadDir(filepath.Join(home, "Downloads")); err != nil || len(entries) != 0 {
+		t.Fatalf("the check left files behind: %v, %v", entries, err)
+	}
+}
+
+func TestDownloadUpdateFetchesTheInstallerForThisPlatform(t *testing.T) {
 	suffix := updateSuffix(runtime.GOOS, runtime.GOARCH)
 	if suffix == "" {
 		t.Skip("no installer is published for this platform")
@@ -221,22 +260,33 @@ func TestCheckForUpdateDownloadsTheInstallersForThisPlatform(t *testing.T) {
 		t.Fatal(err)
 	}
 	opened := ""
-	info, err := (&App{
+	app := &App{
 		updateURL: server.URL + "/latest",
 		assetBase: server.URL + "/download/",
 		openPath:  func(path string) error { opened = path; return nil },
-	}).CheckForUpdate()
+	}
+	info, err := app.CheckForUpdate()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.Available || filepath.Base(opened) != name {
-		t.Fatalf("%+v opened %q, want %q", info, opened, name)
+	if !info.Available || info.AssetURL != server.URL+"/download/"+name {
+		t.Fatalf("%+v", info)
+	}
+	if opened != "" {
+		t.Fatalf("the check downloaded and opened %q before being asked", opened)
+	}
+	message, err := app.DownloadUpdate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(opened) != name {
+		t.Fatalf("opened %q, want %q", opened, name)
 	}
 	if contents, err := os.ReadFile(opened); err != nil || !bytes.Equal(contents, payload) {
 		t.Fatalf("downloaded %q, %v", contents, err)
 	}
-	if !strings.Contains(info.Message, name) || !strings.Contains(info.Message, "opened it") {
-		t.Fatalf("message does not report the download: %q", info.Message)
+	if !strings.Contains(message, name) || !strings.Contains(message, "opened it") {
+		t.Fatalf("message does not report the download: %q", message)
 	}
 }
 
@@ -245,12 +295,26 @@ func TestCheckForUpdateSaysWhenTheReleaseHasNoInstaller(t *testing.T) {
 		w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"` + updateReleaseURL + `/tag/v9.9.9","assets":[]}`))
 	}))
 	defer server.Close()
-	info, err := (&App{updateURL: server.URL}).CheckForUpdate()
+	app := &App{updateURL: server.URL}
+	info, err := app.CheckForUpdate()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.Available || !strings.Contains(info.Message, "no installer for this platform") {
+	if !info.Available || info.AssetURL != "" || !strings.Contains(info.Message, "no installer for this platform") {
 		t.Fatalf("%+v", info)
+	}
+	message, err := app.DownloadUpdate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(message, "open the download page instead") {
+		t.Fatalf("download message = %q", message)
+	}
+}
+
+func TestDownloadUpdateRefusesBeforeAnyCheck(t *testing.T) {
+	if _, err := (&App{}).DownloadUpdate(); err == nil {
+		t.Fatal("downloaded without a check offering an update")
 	}
 }
 
@@ -260,6 +324,11 @@ func TestReleasePageIsValidated(t *testing.T) {
 	}
 	if !usableReleasePage(updateReleaseURL) || !usableReleasePage(updateReleaseURL+"/tag/v1.0.0") {
 		t.Fatal("rejected a release URL")
+	}
+	// The version the UI shows links straight at this platform's installer, so
+	// that URL has to survive the same allow-list the release page does.
+	if !usableReleasePage(updateAssetBase + "v9.9.9/GuildSync-Voice-Mute-9.9.9-Linux-amd64.deb") {
+		t.Fatal("rejected an installer URL")
 	}
 	if !strings.HasPrefix(updateAPIURL, "https://api.github.com/repos/"+updateRepo+"/") {
 		t.Fatalf("update endpoint left the repository: %s", updateAPIURL)

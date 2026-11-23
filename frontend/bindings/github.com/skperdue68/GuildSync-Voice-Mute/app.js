@@ -11,16 +11,26 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
- * CheckForUpdate asks GitHub for the newest published release. The latest
- * endpoint already skips drafts and pre-releases, so a pre-release is never
- * offered. When the release is newer, its installer for this platform is
- * downloaded and opened.
+ * CheckForUpdate asks GitHub for the newest published release. It downloads
+ * nothing: the UI shows the version and links to this platform's installer, and
+ * DownloadUpdate fetches it when the user asks.
  * @returns {$CancellablePromise<$models.UpdateInfo>}
  */
 export function CheckForUpdate() {
     return $Call.ByID(2347956003).then(/** @type {($result: any) => any} */(($result) => {
         return $$createType0($result);
     }));
+}
+
+/**
+ * DownloadUpdate fetches the installer the last check picked for this platform,
+ * verifies its digest and hands it to the desktop. The returned sentence is what
+ * the UI shows; a refused download still returns one, because the release page
+ * is then the way forward. An error means no check has offered an update yet.
+ * @returns {$CancellablePromise<string>}
+ */
+export function DownloadUpdate() {
+    return $Call.ByID(115027584);
 }
 
 /**

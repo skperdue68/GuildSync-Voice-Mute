@@ -177,9 +177,9 @@ export class ShortcutAvailability {
 
 /**
  * UpdateInfo is what the UI needs from a check: whether a newer release exists,
- * where to read about it and a sentence to show. A check that finds a newer
- * release also downloads that platform's installer and opens it, so the message
- * says what was downloaded and what to do next.
+ * the version on offer, the release page and — when that release published one
+ * for this machine — a direct link to this platform's installer. Checking never
+ * downloads anything; DownloadUpdate does that once the user asks.
  */
 export class UpdateInfo {
     /**
@@ -194,12 +194,26 @@ export class UpdateInfo {
              */
             this["available"] = false;
         }
+        if (!("version" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["version"] = "";
+        }
         if (!("page_url" in $$source)) {
             /**
              * @member
              * @type {string}
              */
             this["page_url"] = "";
+        }
+        if (!("asset_url" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["asset_url"] = "";
         }
         if (!("message" in $$source)) {
             /**
