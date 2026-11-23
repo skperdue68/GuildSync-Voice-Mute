@@ -148,10 +148,25 @@ jobs:
             python tools/check_product_metadata.py --expected "${{ github.event.release.tag_name }}"
           fi
           python tools/package_release.py "$PLATFORM_NAME" --version "v$VERSION"
+      - name: Install Inno Setup
+        if: matrix.platform == 'Windows'
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Build the platform installer
+        shell: bash
+        env:
+          PLATFORM_NAME: ${{ matrix.platform }}
+        run: |
+          VERSION="v$(python tools/check_product_metadata.py)"
+          case "$PLATFORM_NAME" in
+            Windows) python tools/package_installers.py windows --version "$VERSION" ;;
+            macOS) python tools/package_installers.py macos --version "$VERSION" ;;
+            Linux) python tools/package_installers.py linux --version "$VERSION" ;;
+          esac
       - uses: actions/upload-artifact@v4
         with:
           name: GuildSync-Voice-Mute-${{ matrix.platform }}
-          path: release/*.zip
+          path: release/*
           if-no-files-found: error
   release:
     if: github.event_name == 'release'
@@ -168,4 +183,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" release/*.zip --repo "$GITHUB_REPOSITORY" --clobber
+        run:           gh release upload "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=GuildSync Voice Mute
+GenericName=Voice mute companion
+Comment=Mute lower-ranked members in your Discord voice channel
+Exec=guildsync-voice-mute
+Icon=guildsync-voice-mute
+Terminal=false
+Categories=Network;AudioVideo;
+StartupNotify=false
