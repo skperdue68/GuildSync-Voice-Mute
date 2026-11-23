@@ -16,11 +16,11 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Check product metadata is consistent
@@ -28,16 +28,44 @@ jobs:
       - run: python -m unittest discover -s tools -p '*_test.py'
       - run: npm ci && npm test
         working-directory: frontend
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high
+        working-directory: frontend
+      # govulncheck type-checks every package, so the GTK/WebKit headers the
+      # Wails Linux build needs must be present even though nothing is built.
+      - name: Install native dependencies for govulncheck
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
+      - name: Scan Go dependencies for known vulnerabilities
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: '${{ env.GO_VERSION }}'
+          go-package: ./...
+          repo-checkout: 'false'
+          cache-dependency-path: go.sum
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # The action reads the dependency diff and needs to comment on the pull
+    # request that introduced it.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Reject pull requests that add a vulnerable dependency
+        uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: high
   compile:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache-dependency-path: go.sum
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -82,8 +110,8 @@ jobs:
             platform: macos
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install Inno Setup
@@ -110,10 +138,10 @@ jobs:
             universal: 'false'
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Stamp release version
@@ -126,11 +154,11 @@ jobs:
           else
             python tools/set-release-version.py "v$(python tools/check_product_metadata.py)"
           fi
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache-dependency-path: go.sum
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -174,25 +202,10 @@ jobs:
             python tools/check_product_metadata.py --expected "${{ github.event.release.tag_name }}"
           fi
           python tools/package_release.py "$PLATFORM_NAME" --version "v$VERSION"
-      - name: Install Inno Setup
-        if: matrix.platform == 'Windows'
-        shell: pwsh
-        run: choco install innosetup --no-progress -y
-      - name: Build the platform installer
-        shell: bash
-        env:
-          PLATFORM_NAME: ${{ matrix.platform }}
-        run: |
-          VERSION="v$(python tools/check_product_metadata.py)"
-          case "$PLATFORM_NAME" in
-            Windows) python tools/package_installers.py windows --version "$VERSION" ;;
-            macOS) python tools/package_installers.py macos --version "$VERSION" ;;
-            Linux) python tools/package_installers.py linux --version "$VERSION" ;;
-          esac
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: GuildSync-Voice-Mute-${{ matrix.platform }}
-          path: release/*
+          path: release/*.zip
           if-no-files-found: error
   release:
     if: github.event_name == 'release'
@@ -201,7 +214,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: release
           merge-multiple: true
@@ -209,4 +222,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run:           gh release upload "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE_TAG" release/*.zip --repo "$GITHUB_REPOSITORY" --clobber

@@ -12,3 +12,13 @@ updates:
     directory: /frontend
     schedule:
       interval: weekly
+  # The workflow pins its actions by tag, so they need the same weekly upkeep
+  # as the module and package files.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - '*'
