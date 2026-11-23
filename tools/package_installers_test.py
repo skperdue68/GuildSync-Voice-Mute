@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -141,6 +142,18 @@ class AppImageBuildTest(unittest.TestCase):
             root = fake_root(tmp)
             with self.assertRaises(ValueError):
                 package_installers.linux_package(root, '2.1.0', run=lambda command, check: None)
+
+
+class InstallerZipTest(unittest.TestCase):
+    def test_the_download_is_a_zip_of_the_installer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / 'GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe'
+            archive.write_bytes(b'setup payload')
+            download = package_installers.zip_installer(archive)
+            self.assertEqual(download.name, 'GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe.zip')
+            with zipfile.ZipFile(download) as bundle:
+                self.assertEqual(bundle.namelist(), [archive.name])
+                self.assertEqual(bundle.read(archive.name), b'setup payload')
 
 
 class ArchitectureNameTest(unittest.TestCase):

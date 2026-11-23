@@ -243,13 +243,14 @@ jobs:
         with:
           path: release
           merge-multiple: true
-      # A release without its installers would leave the in-app update check
-      # with nothing to fetch, so nothing is published until all three exist.
-      - name: Check every platform produced an installer
+      # The zips are what the in-app update downloads, and each one is written
+      # straight after its installer, so nothing is published until all three
+      # exist.
+      - name: Check every platform produced an installer zip
         shell: bash
         run: |
           status=0
-          for pattern in 'release/*-Windows-Setup.exe' 'release/*-macOS.dmg' 'release/*-Linux-*.AppImage'; do
+          for pattern in 'release/*-Windows-Setup.exe.zip' 'release/*-macOS.dmg.zip' 'release/*-Linux-*.AppImage.zip'; do
             if compgen -G "$pattern" > /dev/null; then
               echo "found $pattern"
             else

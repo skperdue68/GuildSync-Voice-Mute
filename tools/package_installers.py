@@ -4,8 +4,9 @@ The release zips stay portable archives. These are the installers users expect
 next to them: an Inno Setup .exe on Windows, a drag-to-Applications .dmg on
 macOS and an AppImage on Linux, which carries the GTK/WebKitGTK runtime it
 links against and so runs on any distribution. All three package the same bin/
-payload the zip uses, and refuse to run when the product metadata is
-inconsistent.
+payload the zip uses, refuse to run when the product metadata is inconsistent,
+and publish the finished installer inside a zip as well, because that zip is
+the file the in-app update downloads.
 """
 import argparse
 import os
@@ -13,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -33,6 +35,20 @@ def release_dir(root):
     directory = Path(root) / 'release'
     directory.mkdir(exist_ok=True)
     return directory
+
+
+def zip_installer(archive):
+    """Publish the installer inside a zip and return the zip's path.
+
+    The updater downloads this zip rather than the bare installer, so what a run
+    of the app fetches is one archive format on every platform, named after the
+    installer it holds.
+    """
+    archive = Path(archive)
+    download = archive.with_name(archive.name + '.zip')
+    with zipfile.ZipFile(download, 'w', zipfile.ZIP_DEFLATED) as bundle:
+        bundle.write(archive, archive.name)
+    return download
 
 
 def appimage_command(binary, icon, desktop, output, build):
@@ -163,10 +179,12 @@ def main():
             archive = macos_installer(root, version)
         else:
             archive = windows_installer(root, version, arguments.iscc)
+        download = zip_installer(archive)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f'::error::installer packaging failed: {error}')
         return 1
     print(archive)
+    print(download)
     return 0
 
 
