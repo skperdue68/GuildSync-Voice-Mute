@@ -163,10 +163,27 @@ func downloadDir() string {
 	return os.TempDir()
 }
 
+// installerMode is what a downloaded installer needs on Linux. An AppImage is a
+// program the desktop runs, and the bits are set generously enough that the
+// user's own account can run it without being the one that downloaded it.
+const installerMode os.FileMode = 0o755
+
+// makeExecutable gives a downloaded installer its executable bit. HTTP carries
+// no permission bits, so an AppImage saved from a release arrives at 0644 and
+// opening it fails with a permission error. Only Linux runs the file directly;
+// Windows launches the setup by name and macOS mounts the disk image, so their
+// modes are left as they are.
+func makeExecutable(path, goos string) error {
+	if goos != "linux" {
+		return nil
+	}
+	return os.Chmod(path, installerMode)
+}
+
 // fetchUpdateAsset downloads one release asset into directory and returns its
-// path. The bytes are written to a .part file and only renamed once the
-// checksum matches, so a truncated or corrupted download is never left looking
-// like a usable installer.
+// path. The bytes are written to a .part file, made executable when the platform
+// needs that, and only renamed once the checksum matches, so a truncated or
+// corrupted download is never left looking like a usable installer.
 func fetchUpdateAsset(asset updateAsset, directory string) (string, error) {
 	request, err := http.NewRequest(http.MethodGet, asset.URL, nil)
 	if err != nil {
@@ -197,6 +214,14 @@ func fetchUpdateAsset(asset updateAsset, directory string) (string, error) {
 	}
 	if err == nil && !digestMatches(asset.Digest, hex.EncodeToString(hash.Sum(nil))) {
 		err = errors.New("the checksum does not match the published digest")
+	}
+	// The bit is set on the .part file so the installer only takes its final
+	// name once it is ready to run.
+	if err == nil {
+		if chmodErr := makeExecutable(partial, runtime.GOOS); chmodErr != nil {
+			os.Remove(partial)
+			return "", fmt.Errorf("making the download executable: %w", chmodErr)
+		}
 	}
 	if err == nil {
 		// Windows refuses to rename onto an existing file, so an earlier
