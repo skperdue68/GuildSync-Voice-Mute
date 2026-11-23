@@ -70,6 +70,9 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - name: Install Wails Linux dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
       - name: Install Wails 3 CLI
@@ -95,9 +98,20 @@ jobs:
         run: |
           go build ./...
           go test ./...
-  # The real installers are only built on a release. Package a stub payload on
-  # each native runner so the Windows and macOS paths are proven by a pull
-  # request instead of by the first release that needs them.
+      # A release builds the AppImage on a tag. Bundle one here as well, so the
+      # packager and the zip the in-app update downloads are proven on every
+      # pull request instead of by the first release that needs them.
+      - name: Build and verify the Linux installer zip
+        shell: bash
+        run: |
+          wails3 build
+          python tools/smoke_installers.py linux
+  # The real installers are only built on a release. Run the release's own
+  # build-installer-then-zip step on a stub payload on each native runner, so
+  # the Windows and macOS packagers and the zip the updater downloads are
+  # proven by a pull request instead of by the first release that needs them.
+  # Linux is covered by the compile job, which already has the toolchain and
+  # bundles the application the AppImage needs.
   installers:
     if: github.event_name == 'pull_request'
     strategy:
@@ -118,7 +132,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: choco install innosetup --no-progress -y
-      - name: Package a stub payload with the ${{ matrix.platform }} installer
+      - name: Build the installer zip and verify the copy inside it
         shell: bash
         run: python tools/smoke_installers.py ${{ matrix.platform }}
   build:
@@ -221,9 +235,10 @@ jobs:
           case "$PLATFORM_NAME" in
             Windows) python tools/package_installers.py windows --version "$VERSION" ;;
             macOS) python tools/package_installers.py macos --version "$VERSION" ;;
-            # A .deb is built for one machine only, so it is named for the
-            # architecture of the runner that built it.
-            Linux) python tools/package_installers.py linux --version "$VERSION" --arch "$(dpkg --print-architecture)" ;;
+            # An AppImage carries the GTK/WebKitGTK runtime, so one file runs on
+            # any distribution; it is still built for the runner's architecture,
+            # which ends up in the name.
+            Linux) python tools/package_installers.py linux --version "$VERSION" --arch "$(uname -m)" ;;
           esac
       - uses: actions/upload-artifact@v7
         with:
@@ -242,13 +257,14 @@ jobs:
         with:
           path: release
           merge-multiple: true
-      # A release without its installers would leave the in-app update check
-      # with nothing to fetch, so nothing is published until all three exist.
-      - name: Check every platform produced an installer
+      # The zips are what the in-app update downloads, and each one is written
+      # straight after its installer, so nothing is published until all three
+      # exist.
+      - name: Check every platform produced an installer zip
         shell: bash
         run: |
           status=0
-          for pattern in 'release/*-Windows-Setup.exe' 'release/*-macOS.dmg' 'release/*-Linux-*.deb'; do
+          for pattern in 'release/*-Windows-Setup.exe.zip' 'release/*-macOS.dmg.zip' 'release/*-Linux-*.AppImage.zip'; do
             if compgen -G "$pattern" > /dev/null; then
               echo "found $pattern"
             else

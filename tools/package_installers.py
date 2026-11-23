@@ -2,16 +2,19 @@
 
 The release zips stay portable archives. These are the installers users expect
 next to them: an Inno Setup .exe on Windows, a drag-to-Applications .dmg on
-macOS and a .deb on Linux. All three package the same bin/ payload the zip
-uses, and refuse to run when the product metadata is inconsistent.
+macOS and an AppImage on Linux, which carries the GTK/WebKitGTK runtime it
+links against and so runs on any distribution. All three package the same bin/
+payload the zip uses, refuse to run when the product metadata is inconsistent,
+and publish the finished installer inside a zip as well, because that zip is
+the file the in-app update downloads.
 """
 import argparse
 import os
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -19,12 +22,9 @@ import metadata
 
 BINARY = 'GuildSync-Voice-Mute'
 SLUG = 'guildsync-voice-mute'
-MAINTAINER = 'GuildSync <58951920+skperdue68@users.noreply.github.com>'
-# Ubuntu 24.04 package names for the GTK4/WebKitGTK 6.0 runtime the build needs.
-DEPENDS = 'libgtk-4-1, libwebkitgtk-6.0-4'
-# Debian architecture names are lowercase and contain no separators. The value
-# ends up in the filename and the control file, so it is checked.
-DEBIAN_ARCHITECTURE = re.compile(r'[a-z0-9]+')
+# wails3's AppImage generator builds these two architectures and names the file
+# after the one it built. The name is published, so it is checked.
+APPIMAGE_ARCHITECTURES = ('x86_64', 'aarch64')
 ISCC_CANDIDATES = (
     r'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
     r'C:\Program Files\Inno Setup 6\ISCC.exe',
@@ -37,65 +37,92 @@ def release_dir(root):
     return directory
 
 
-def deb_control(version, installed_kb, architecture='amd64'):
-    """Render the DEBIAN/control file for the Linux package.
+def zip_installer(archive):
+    """Publish the installer inside a zip and return the zip's path.
 
-    Debian keeps a package description's continuation lines indented by one
-    space; anything else is read as a new field and makes dpkg reject the file.
+    The updater downloads this zip rather than the bare installer, so what a run
+    of the app fetches is one archive format on every platform, named after the
+    installer it holds.
     """
-    fields = [
-        f'Package: {SLUG}',
-        f'Version: {version}',
-        'Section: net',
-        'Priority: optional',
-        f'Architecture: {architecture}',
-        f'Maintainer: {MAINTAINER}',
-        f'Installed-Size: {installed_kb}',
-        f'Depends: {DEPENDS}',
-        'Description: GuildSync voice-channel mute companion',
-        ' Press-to-mute desktop companion for the GuildSync Discord bot. It signs in',
-        ' with Discord and asks the existing GuildSync backend to mute lower-ranked',
-        ' members in your current voice channel for a short, self-ending interval.',
+    archive = Path(archive)
+    download = archive.with_name(archive.name + '.zip')
+    with zipfile.ZipFile(download, 'w', zipfile.ZIP_DEFLATED) as bundle:
+        bundle.write(archive, archive.name)
+    return download
+
+
+def build_installer(root, platform, version, architecture='x86_64', iscc=None):
+    """Build one platform's installer and publish it inside its zip.
+
+    A release runs exactly this, so the archive a smoke test builds is the one
+    the updater downloads rather than a bare installer shaped like it.
+    """
+    if platform == 'linux':
+        archive = linux_package(root, version, architecture)
+    elif platform == 'macos':
+        archive = macos_installer(root, version)
+    elif platform == 'windows':
+        archive = windows_installer(root, version, iscc)
+    else:
+        raise ValueError(f'{platform!r} is not a platform installer')
+    return archive, zip_installer(archive)
+
+
+def appimage_command(binary, icon, desktop, output, build):
+    """The wails3 invocation that bundles one AppImage."""
+    return [
+        'wails3', 'generate', 'appimage',
+        '-binary', str(binary),
+        '-icon', str(icon),
+        '-desktopfile', str(desktop),
+        '-outputdir', str(output),
+        '-builddir', str(build),
     ]
-    return '\n'.join(fields) + '\n'
 
 
-def linux_package(root, version, architecture='amd64'):
-    """Build a .deb for one Debian architecture.
+def linux_package(root, version, architecture='x86_64', run=subprocess.run):
+    """Build an AppImage for one architecture.
 
-    Debian packages are architecture-specific, so the architecture is part of
-    the filename: the updater picks the one built for the machine it runs on.
+    The AppImage is the Linux installer because it bundles the GTK/WebKitGTK
+    runtime it links against, so one file runs on any distribution rather than
+    only on the one whose package manager would accept a .deb. It is still
+    built for a single architecture, so the architecture is part of the
+    filename: the updater picks the one built for the machine it runs on.
     """
-    if not DEBIAN_ARCHITECTURE.fullmatch(architecture):
-        raise ValueError(f'{architecture!r} is not a Debian architecture name')
-    if not shutil.which('dpkg-deb'):
-        raise ValueError('dpkg-deb is required to build the .deb package')
+    if architecture not in APPIMAGE_ARCHITECTURES:
+        raise ValueError(f'{architecture!r} is not an AppImage architecture')
     root = Path(root)
     payload = root / 'bin' / BINARY
     if not payload.is_file():
         raise ValueError(f'the Linux payload is missing: {payload}')
+    if run is subprocess.run and not shutil.which('wails3'):
+        raise ValueError('the wails3 CLI is required to build the AppImage')
     with tempfile.TemporaryDirectory() as staging:
         stage = Path(staging)
-        binary = stage / 'usr' / 'bin' / SLUG
-        binary.parent.mkdir(parents=True)
+        # The generator names the AppImage after the binary and writes an AppRun
+        # that runs that name, so the payload is staged under the name the
+        # desktop file's Exec line already uses.
+        binary = stage / SLUG
         shutil.copy2(payload, binary)
         binary.chmod(0o755)
-
-        entry = stage / 'usr' / 'share' / 'applications' / f'{SLUG}.desktop'
-        entry.parent.mkdir(parents=True)
-        shutil.copy2(root / 'build' / 'linux' / f'{SLUG}.desktop', entry)
-
-        icon = stage / 'usr' / 'share' / 'icons' / 'hicolor' / '256x256' / 'apps' / f'{SLUG}.png'
-        icon.parent.mkdir(parents=True)
+        # linuxdeploy looks the icon up by the name the desktop file's Icon= line
+        # uses, so it is staged under that name too.
+        icon = stage / f'{SLUG}.png'
         shutil.copy2(root / 'build' / 'appicon.png', icon)
-
-        control = stage / 'DEBIAN' / 'control'
-        control.parent.mkdir(parents=True)
-        installed_kb = (binary.stat().st_size + icon.stat().st_size) // 1024 + 1
-        control.write_text(deb_control(version, installed_kb, architecture))
-
-        archive = release_dir(root) / f'{BINARY}-{version}-Linux-{architecture}.deb'
-        subprocess.run(['dpkg-deb', '--build', '--root-owner-group', str(stage), str(archive)], check=True)
+        output = release_dir(root)
+        run(appimage_command(
+            binary,
+            icon,
+            root / 'build' / 'linux' / f'{SLUG}.desktop',
+            output,
+            stage / 'appimage',
+        ), check=True)
+        produced = output / f'{SLUG}-{architecture}.AppImage'
+        if not produced.is_file():
+            raise ValueError(f'wails3 reported success but {produced.name} was not written')
+        archive = output / f'{BINARY}-{version}-Linux-{architecture}.AppImage'
+        produced.replace(archive)
+        archive.chmod(0o755)
         return archive
 
 
@@ -157,22 +184,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('platform', choices=('linux', 'macos', 'windows'))
     parser.add_argument('--version', help='Release tag the metadata must match')
-    parser.add_argument('--arch', default='amd64', help='Debian architecture for the .deb')
+    parser.add_argument('--arch', default='x86_64', help='AppImage architecture for the Linux installer')
     parser.add_argument('--iscc', help='Path to Inno Setup ISCC.exe')
     arguments = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     try:
         version = metadata.validate(root, arguments.version)
-        if arguments.platform == 'linux':
-            archive = linux_package(root, version, arguments.arch)
-        elif arguments.platform == 'macos':
-            archive = macos_installer(root, version)
-        else:
-            archive = windows_installer(root, version, arguments.iscc)
+        archive, download = build_installer(
+            root, arguments.platform, version, arguments.arch, arguments.iscc
+        )
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f'::error::installer packaging failed: {error}')
         return 1
     print(archive)
+    print(download)
     return 0
 
 

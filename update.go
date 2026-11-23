@@ -39,13 +39,6 @@ type UpdateInfo struct {
 	Message   string `json:"message"`
 }
 
-// pendingUpdate is the release the last check found. The installer is a pointer
-// because a release can be newer without publishing one for this platform.
-type pendingUpdate struct {
-	version string
-	asset   *updateAsset
-}
-
 // versionParts compares dotted versions, ignoring a leading "v" and any
 // pre-release or build suffix.
 func versionParts(value string) ([3]int, bool) {
@@ -102,32 +95,34 @@ type updateAsset struct {
 	Digest string
 }
 
-// debArchitectures maps a Go architecture to the Debian name that goes in the
-// package filename. dpkg refuses a package built for another machine, so this
-// cannot be guessed from the release alone.
-var debArchitectures = map[string]string{
-	"386":     "i386",
-	"amd64":   "amd64",
-	"arm":     "armhf",
-	"arm64":   "arm64",
-	"ppc64le": "ppc64el",
-	"riscv64": "riscv64",
-	"s390x":   "s390x",
+// linuxArchitecture names the AppImage for a Go architecture. Linux ships an
+// AppImage so one file runs on any distribution, but it is still built for one
+// architecture, and the generator only builds these two.
+func linuxArchitecture(goarch string) string {
+	switch goarch {
+	case "amd64":
+		return "x86_64"
+	case "arm64":
+		return "aarch64"
+	}
+	return ""
 }
 
-// updateSuffix names the installer each platform ships in its release. The
-// Windows setup and the macOS disk image work on every architecture those
-// releases target; a Debian package does not, so its architecture is part of
-// the name and is picked to match the machine.
+// updateSuffix names the file an update downloads for each platform. Every
+// release publishes the installer next to a zip of that installer, and the zip
+// is what an update fetches, so each name ends in ".zip". The Windows setup and
+// the macOS disk image work on every architecture those releases target; a Linux
+// AppImage does not, so its architecture is part of the name and is picked to
+// match the machine.
 func updateSuffix(goos, goarch string) string {
 	switch goos {
 	case "windows":
-		return "-Windows-Setup.exe"
+		return "-Windows-Setup.exe.zip"
 	case "darwin":
-		return "-macOS.dmg"
+		return "-macOS.dmg.zip"
 	case "linux":
-		if architecture, ok := debArchitectures[goarch]; ok {
-			return "-Linux-" + architecture + ".deb"
+		if architecture := linuxArchitecture(goarch); architecture != "" {
+			return "-Linux-" + architecture + ".AppImage.zip"
 		}
 	}
 	return ""
@@ -245,44 +240,36 @@ func (a *App) openInstaller(path string) error {
 	return openDownloaded(path)
 }
 
-// rememberUpdate stores what the last check found, so DownloadUpdate fetches
-// the installer the user was offered instead of deriving a new one.
-func (a *App) rememberUpdate(pending *pendingUpdate) {
-	a.updateMu.Lock()
-	a.pendingUpdate = pending
-	a.updateMu.Unlock()
-}
-
-// DownloadUpdate fetches the installer the last check picked for this platform,
-// verifies its digest and hands it to the desktop. The returned sentence is what
-// the UI shows; a refused download still returns one, because the release page
-// is then the way forward. An error means no check has offered an update yet.
+// DownloadUpdate fetches the installer the newest release publishes for this
+// platform, verifies its digest and hands it to the desktop. It looks the
+// release up again rather than trusting an earlier check, so it shares no state
+// with the check that fills the window. The returned sentence is what the UI
+// shows; a refused download still returns one, because the release page is then
+// the way forward.
 func (a *App) DownloadUpdate() (string, error) {
-	a.updateMu.Lock()
-	pending := a.pendingUpdate
-	a.updateMu.Unlock()
-	if pending == nil {
-		return "", errors.New("no update has been found to download")
-	}
-	available := "Version " + pending.version + " is available."
-	if pending.asset == nil {
-		return available + " That release has no installer for this platform; open the download page instead.", nil
-	}
-	asset := *pending.asset
-	path, err := fetchUpdateAsset(asset, downloadDir())
+	info, asset, err := a.lookupUpdate()
 	if err != nil {
-		return available + " The download could not be completed (" + err.Error() + "). Open the download page instead.", nil
+		return "", err
+	}
+	// Already current, or a release with no installer for this platform: the
+	// check's own sentence says which, and the release page is the way forward.
+	if !info.Available || asset == nil {
+		return info.Message, nil
+	}
+	path, err := fetchUpdateAsset(*asset, downloadDir())
+	if err != nil {
+		return "The download could not be completed (" + err.Error() + "). Open the download page instead.", nil
 	}
 	if err := a.openInstaller(path); err != nil {
-		return available + " Downloaded " + asset.Name + " to " + path + "; open it to install, then start the new version.", nil
+		return "Downloaded " + asset.Name + " to " + path + "; unzip it, run the installer inside, then start the new version.", nil
 	}
-	return available + " Downloaded " + asset.Name + " to " + path + " and opened it. Quit the companion before installing, then start the new version.", nil
+	return "Downloaded " + asset.Name + " to " + path + " and opened it. Unzip it, quit the companion, run the installer inside, then start the new version.", nil
 }
 
 // lookupUpdate asks GitHub for the newest published release and describes it.
 // The latest endpoint already skips drafts and pre-releases, so a pre-release is
 // never offered.
-func (a *App) lookupUpdate() (UpdateInfo, *pendingUpdate, error) {
+func (a *App) lookupUpdate() (UpdateInfo, *updateAsset, error) {
 	info := UpdateInfo{PageURL: updateReleaseURL}
 	endpoint := a.updateURL
 	if endpoint == "" {
@@ -332,15 +319,12 @@ func (a *App) lookupUpdate() (UpdateInfo, *pendingUpdate, error) {
 		if base == "" {
 			base = updateAssetBase
 		}
-		pending := &pendingUpdate{version: latest}
 		if asset, ok := pickUpdateAsset(assets, runtime.GOOS, runtime.GOARCH, base); ok {
-			pending.asset = &asset
 			info.AssetURL = asset.URL
 			info.Message = "Version " + latest + " is available."
-		} else {
-			info.Message = "Version " + latest + " is available, but that release has no installer for this platform."
+			return info, &asset, nil
 		}
-		return info, pending, nil
+		info.Message = "Version " + latest + " is available, but that release has no installer for this platform."
 	default:
 		info.Message = "You are running the latest release."
 	}
@@ -351,8 +335,7 @@ func (a *App) lookupUpdate() (UpdateInfo, *pendingUpdate, error) {
 // nothing: the UI shows the version and links to this platform's installer, and
 // DownloadUpdate fetches it when the user asks.
 func (a *App) CheckForUpdate() (UpdateInfo, error) {
-	info, pending, err := a.lookupUpdate()
-	a.rememberUpdate(pending)
+	info, _, err := a.lookupUpdate()
 	return info, err
 }
 

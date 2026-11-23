@@ -41,11 +41,6 @@ type App struct {
 	// installer handler; both fall back to the real ones when empty or nil.
 	assetBase string
 	openPath  func(string) error
-
-	// pendingUpdate is the installer the last check offered, so DownloadUpdate
-	// fetches exactly what the user was shown.
-	updateMu      sync.Mutex
-	pendingUpdate *pendingUpdate
 }
 
 func NewApp() *App {

@@ -78,22 +78,25 @@ func TestCheckForUpdateReportsHTTPFailure(t *testing.T) {
 }
 
 func TestPickUpdateAssetMatchesEachPlatform(t *testing.T) {
+	// The bare installers are published too, so the zip has to win.
 	assets := []updateAsset{
-		{Name: "GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb"},
-		{Name: "GuildSync-Voice-Mute-2.1.0-Linux-arm64.deb", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-arm64.deb"},
-		{Name: "GuildSync-Voice-Mute-2.1.0-macOS.dmg", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-macOS.dmg"},
+		{Name: "GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage"},
+		{Name: "GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage.zip", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage.zip"},
+		{Name: "GuildSync-Voice-Mute-2.1.0-Linux-aarch64.AppImage.zip", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-aarch64.AppImage.zip"},
+		{Name: "GuildSync-Voice-Mute-2.1.0-macOS.dmg.zip", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-macOS.dmg.zip"},
 		{Name: "GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe"},
+		{Name: "GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe.zip", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe.zip"},
 	}
 	for _, tc := range []struct{ goos, goarch, want string }{
-		{"windows", "amd64", "GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe"},
+		{"windows", "amd64", "GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe.zip"},
 		// The setup is x64-compatible, so an arm64 PC runs the same one.
-		{"windows", "arm64", "GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe"},
+		{"windows", "arm64", "GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe.zip"},
 		// The disk image holds a universal bundle.
-		{"darwin", "arm64", "GuildSync-Voice-Mute-2.1.0-macOS.dmg"},
-		{"darwin", "amd64", "GuildSync-Voice-Mute-2.1.0-macOS.dmg"},
-		// A Debian package is built for one machine only.
-		{"linux", "amd64", "GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb"},
-		{"linux", "arm64", "GuildSync-Voice-Mute-2.1.0-Linux-arm64.deb"},
+		{"darwin", "arm64", "GuildSync-Voice-Mute-2.1.0-macOS.dmg.zip"},
+		{"darwin", "amd64", "GuildSync-Voice-Mute-2.1.0-macOS.dmg.zip"},
+		// An AppImage is built for one machine only.
+		{"linux", "amd64", "GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage.zip"},
+		{"linux", "arm64", "GuildSync-Voice-Mute-2.1.0-Linux-aarch64.AppImage.zip"},
 	} {
 		asset, ok := pickUpdateAsset(assets, tc.goos, tc.goarch, updateAssetBase)
 		if !ok || asset.Name != tc.want {
@@ -103,11 +106,11 @@ func TestPickUpdateAssetMatchesEachPlatform(t *testing.T) {
 }
 
 func TestPickUpdateAssetRefusesAnotherArchitecture(t *testing.T) {
-	// A release built only on amd64 must not hand an arm64 machine a package
-	// dpkg will reject.
+	// A release built only on amd64 must not hand an arm64 machine an image it
+	// cannot run.
 	assets := []updateAsset{{
-		Name: "GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb",
-		URL:  updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb",
+		Name: "GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage.zip",
+		URL:  updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage.zip",
 	}}
 	if asset, ok := pickUpdateAsset(assets, "linux", "arm64", updateAssetBase); ok {
 		t.Fatalf("an arm64 machine picked %q", asset.Name)
@@ -117,28 +120,29 @@ func TestPickUpdateAssetRefusesAnotherArchitecture(t *testing.T) {
 	}
 }
 
-func TestUpdateSuffixNamesTheDebianArchitecture(t *testing.T) {
+func TestUpdateSuffixNamesTheLinuxArchitecture(t *testing.T) {
 	for goarch, want := range map[string]string{
-		"amd64":   "-Linux-amd64.deb",
-		"arm64":   "-Linux-arm64.deb",
-		"386":     "-Linux-i386.deb",
-		"arm":     "-Linux-armhf.deb",
-		"ppc64le": "-Linux-ppc64el.deb",
+		"amd64": "-Linux-x86_64.AppImage.zip",
+		"arm64": "-Linux-aarch64.AppImage.zip",
 	} {
 		if got := updateSuffix("linux", goarch); got != want {
 			t.Errorf("updateSuffix(linux, %q) = %q, want %q", goarch, got, want)
 		}
 	}
-	if got := updateSuffix("linux", "wasm"); got != "" {
-		t.Errorf("updateSuffix(linux, wasm) = %q, want no installer", got)
+	// The AppImage generator builds no other Linux architecture, so those
+	// machines are offered the release page instead.
+	for _, goarch := range []string{"386", "arm", "ppc64le", "wasm"} {
+		if got := updateSuffix("linux", goarch); got != "" {
+			t.Errorf("updateSuffix(linux, %q) = %q, want no installer", goarch, got)
+		}
 	}
-	if got := updateSuffix("windows", "arm64"); got != "-Windows-Setup.exe" {
+	if got := updateSuffix("windows", "arm64"); got != "-Windows-Setup.exe.zip" {
 		t.Errorf("updateSuffix(windows, arm64) = %q", got)
 	}
 }
 
 func TestPickUpdateAssetRefusesAnotherHostOrPlatform(t *testing.T) {
-	assets := []updateAsset{{Name: "GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb", URL: "https://example.com/GuildSync-Voice-Mute-2.1.0-Linux-amd64.deb"}}
+	assets := []updateAsset{{Name: "GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage.zip", URL: "https://example.com/GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage.zip"}}
 	if _, ok := pickUpdateAsset(assets, "linux", "amd64", updateAssetBase); ok {
 		t.Fatal("picked an asset from another host")
 	}
@@ -169,7 +173,7 @@ func TestFetchUpdateAssetVerifiesTheDigest(t *testing.T) {
 	defer server.Close()
 	directory := t.TempDir()
 	asset := updateAsset{
-		Name:   "GuildSync-Voice-Mute-9.9.9-Linux.deb",
+		Name:   "GuildSync-Voice-Mute-9.9.9-Linux-x86_64.AppImage.zip",
 		URL:    server.URL + "/download",
 		Digest: "sha256:" + hex.EncodeToString(sum[:]),
 	}
@@ -307,14 +311,8 @@ func TestCheckForUpdateSaysWhenTheReleaseHasNoInstaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(message, "open the download page instead") {
+	if !strings.Contains(message, "no installer for this platform") {
 		t.Fatalf("download message = %q", message)
-	}
-}
-
-func TestDownloadUpdateRefusesBeforeAnyCheck(t *testing.T) {
-	if _, err := (&App{}).DownloadUpdate(); err == nil {
-		t.Fatal("downloaded without a check offering an update")
 	}
 }
 
@@ -327,7 +325,7 @@ func TestReleasePageIsValidated(t *testing.T) {
 	}
 	// The version the UI shows links straight at this platform's installer, so
 	// that URL has to survive the same allow-list the release page does.
-	if !usableReleasePage(updateAssetBase + "v9.9.9/GuildSync-Voice-Mute-9.9.9-Linux-amd64.deb") {
+	if !usableReleasePage(updateAssetBase + "v9.9.9/GuildSync-Voice-Mute-9.9.9-Linux-x86_64.AppImage.zip") {
 		t.Fatal("rejected an installer URL")
 	}
 	if !strings.HasPrefix(updateAPIURL, "https://api.github.com/repos/"+updateRepo+"/") {
