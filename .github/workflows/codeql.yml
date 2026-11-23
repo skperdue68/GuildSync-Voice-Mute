@@ -4,16 +4,19 @@ name: CodeQL
 # reports "could not import C" plus type errors in the dependency's generated
 # bindings. This workflow installs those headers and builds with cgo instead.
 #
+# Default setup was switched off on 2026-11-23 so this workflow could take over.
 # GitHub refuses advanced-configuration SARIF uploads while default setup is
-# enabled, so the analysis below stays idle until default setup is turned off in
-# Settings -> Code security -> Code scanning. That keeps this workflow green
-# rather than red for a configuration mismatch.
+# enabled, so the analysis below still reads that setting and stays idle if it
+# is ever turned back on, rather than going red over a configuration mismatch.
 on:
   push:
     branches: [master]
   pull_request:
   schedule:
     - cron: '17 3 * * 1'
+  # Lets the analysis be run by hand after a scanner or runner change without
+  # pushing a commit.
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
