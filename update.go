@@ -127,17 +127,37 @@ func updateSuffix(goos, goarch string) string {
 	return ""
 }
 
-// pickUpdateAsset chooses the installer for one platform and architecture. The
-// URL check keeps a crafted release payload from making the app download from
-// anywhere else.
-func pickUpdateAsset(assets []updateAsset, goos, goarch, base string) (updateAsset, bool) {
-	suffix := updateSuffix(goos, goarch)
-	if suffix == "" {
-		return updateAsset{}, false
+// updateAssetSuffixes lists what an update may download for one platform, best
+// first: the installer itself, then the zip that carries it, because a release
+// that published only the archived installer still has to be installable from
+// the window.
+func updateAssetSuffixes(goos, goarch string) []string {
+	suffixes := []string{}
+	if suffix := updateSuffix(goos, goarch); suffix != "" {
+		suffixes = append(suffixes, suffix)
 	}
-	for _, asset := range assets {
-		if strings.HasSuffix(asset.Name, suffix) && strings.HasPrefix(asset.URL, base) {
-			return asset, true
+	switch goos {
+	case "windows":
+		suffixes = append(suffixes, "-Windows-Setup.zip", "-Windows.zip")
+	case "darwin":
+		suffixes = append(suffixes, "-macOS.dmg.zip", "-macOS.zip")
+	case "linux":
+		if architecture := linuxArchitecture(goarch); architecture != "" {
+			suffixes = append(suffixes, "-Linux-"+architecture+".AppImage.zip", "-Linux.zip")
+		}
+	}
+	return suffixes
+}
+
+// pickUpdateAsset chooses the file an update downloads for one platform and
+// architecture, preferring the installer over any archive. The URL check keeps
+// a crafted release payload from making the app download from anywhere else.
+func pickUpdateAsset(assets []updateAsset, goos, goarch, base string) (updateAsset, bool) {
+	for _, suffix := range updateAssetSuffixes(goos, goarch) {
+		for _, asset := range assets {
+			if strings.HasSuffix(asset.Name, suffix) && strings.HasPrefix(asset.URL, base) {
+				return asset, true
+			}
 		}
 	}
 	return updateAsset{}, false
@@ -287,7 +307,16 @@ func (a *App) DownloadUpdate() (string, error) {
 	if err := a.openInstaller(path); err != nil {
 		return "Downloaded " + asset.Name + " to " + path + "; open it to install, then start the new version.", nil
 	}
-	return "Downloaded " + asset.Name + " to " + path + " and opened it. Quit the companion before installing, then start the new version.", nil
+	return "Downloaded " + asset.Name + " to " + path + " and opened it. " + nextStep(asset.Name), nil
+}
+
+// nextStep says what to do with what was downloaded. An archive has to be
+// unpacked before the installer inside it can run.
+func nextStep(name string) string {
+	if strings.HasSuffix(name, ".zip") {
+		return "Unpack it, then run the installer inside and start the new version."
+	}
+	return "Quit the companion before installing, then start the new version."
 }
 
 // lookupUpdate asks GitHub for the newest published release and describes it.

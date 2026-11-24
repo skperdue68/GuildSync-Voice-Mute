@@ -105,6 +105,46 @@ func TestPickUpdateAssetMatchesEachPlatform(t *testing.T) {
 	}
 }
 
+func TestPickUpdateAssetFallsBackToTheZippedInstaller(t *testing.T) {
+	// A release that published only the archived installer still has to be
+	// installable from the window.
+	assets := []updateAsset{
+		{Name: "GuildSync-Voice-Mute-2.1.0-Windows-Setup.zip", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Windows-Setup.zip"},
+		{Name: "GuildSync-Voice-Mute-2.1.0-macOS.zip", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-macOS.zip"},
+		{Name: "GuildSync-Voice-Mute-2.1.0-Linux-aarch64.AppImage.zip", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-aarch64.AppImage.zip"},
+		{Name: "GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage.zip", URL: updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage.zip"},
+	}
+	for _, tc := range []struct{ goos, goarch, want string }{
+		{"windows", "amd64", "GuildSync-Voice-Mute-2.1.0-Windows-Setup.zip"},
+		{"darwin", "arm64", "GuildSync-Voice-Mute-2.1.0-macOS.zip"},
+		{"linux", "amd64", "GuildSync-Voice-Mute-2.1.0-Linux-x86_64.AppImage.zip"},
+		{"linux", "arm64", "GuildSync-Voice-Mute-2.1.0-Linux-aarch64.AppImage.zip"},
+	} {
+		asset, ok := pickUpdateAsset(assets, tc.goos, tc.goarch, updateAssetBase)
+		if !ok || asset.Name != tc.want {
+			t.Errorf("pickUpdateAsset(%s/%s) = %q, %v; want %q", tc.goos, tc.goarch, asset.Name, ok, tc.want)
+		}
+	}
+	// A bare installer still wins over any archive beside it.
+	withInstaller := append([]updateAsset{{
+		Name: "GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe",
+		URL:  updateAssetBase + "v2.1.0/GuildSync-Voice-Mute-2.1.0-Windows-Setup.exe",
+	}}, assets...)
+	asset, ok := pickUpdateAsset(withInstaller, "windows", "amd64", updateAssetBase)
+	if !ok || !strings.HasSuffix(asset.Name, "-Setup.exe") {
+		t.Fatalf("picked %q, %v", asset.Name, ok)
+	}
+}
+
+func TestNextStepUnpacksAnArchive(t *testing.T) {
+	if !strings.Contains(nextStep("GuildSync-Voice-Mute-2.1.0-macOS.zip"), "Unpack") {
+		t.Fatalf("archive step = %q", nextStep("GuildSync-Voice-Mute-2.1.0-macOS.zip"))
+	}
+	if strings.Contains(nextStep("GuildSync-Voice-Mute-2.1.0-macOS.dmg"), "Unpack") {
+		t.Fatalf("installer step = %q", nextStep("GuildSync-Voice-Mute-2.1.0-macOS.dmg"))
+	}
+}
+
 func TestPickUpdateAssetRefusesAnotherArchitecture(t *testing.T) {
 	// A release built only on amd64 must not hand an arm64 machine an image it
 	// cannot run.
