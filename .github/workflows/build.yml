@@ -106,6 +106,40 @@ jobs:
         run: |
           wails3 build
           python tools/smoke_installers.py linux
+  # The compile job only tests on Linux, so a failure that another platform alone
+  # can produce (Windows cannot record a file mode, for one) went unnoticed until
+  # the release build hit it. Run the same suite on the platforms a release also
+  # builds, from the pull request that changed the code.
+  native-test:
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # The Go sources embed the bundle, so the tests do not compile until the
+      # frontend has been built.
+      - name: Build frontend bundle
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Test Go
+        shell: bash
+        run: go test ./...
   # The real installers are only built on a release. Run the release's own
   # build-installer step on a stub payload on each native runner, so the Windows
   # and macOS packagers and the installer the updater downloads are proven by a
