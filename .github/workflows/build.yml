@@ -34,8 +34,9 @@ jobs:
       - name: Audit npm dependencies
         run: npm audit --audit-level=high
         working-directory: frontend
-      # Drop the slow Azure archive mirror before apt contacts the network;
-      # tools/apt_mirrors.py explains why it cannot run after `apt-get update`.
+      # Point apt at Canonical's archive before it contacts the network; the
+      # runner image ranks a regional mirror first, and tools/apt_mirrors.py
+      # explains why it cannot wait until after `apt-get update`.
       - name: Point apt at the standard Ubuntu mirrors
         run: sudo python3 tools/apt_mirrors.py
       # govulncheck type-checks every package, so the GTK/WebKit headers the
