@@ -15,6 +15,7 @@ declare module "@wailsio/runtime" {
             "login-complete": main$0.Session;
             "login-error": string;
             "shortcut-error": string;
+            "update-available": main$0.UpdateInfo;
             "voice-shortcut-edge": boolean;
             "voice-shortcut-status": string;
         }

@@ -13,10 +13,12 @@ import * as main$0 from "../../../../skperdue68/GuildSync-Voice-Mute/models.js";
 function configure() {
     Object.freeze(Object.assign($Create.Events, {
         "login-complete": $$createType0,
+        "update-available": $$createType1,
     }));
 }
 
 // Private type creation functions
 const $$createType0 = main$0.Session.createFrom;
+const $$createType1 = main$0.UpdateInfo.createFrom;
 
 configure();
