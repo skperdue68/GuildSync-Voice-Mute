@@ -22,6 +22,11 @@ export const LoginError = "login-error";
 export const ShortcutError = "shortcut-error";
 
 /**
+ * Name of the custom event "update-available".
+ */
+export const UpdateAvailable = "update-available";
+
+/**
  * Name of the custom event "voice-shortcut-edge".
  */
 export const VoiceShortcutEdge = "voice-shortcut-edge";

@@ -1,10 +1,13 @@
 name: Build and test companion
 on:
-  release:
-    types: [published]
+  # A tag is the release trigger. The build verifies every installer and only
+  # then creates and publishes the release, so a version never becomes public
+  # before its installers exist and nothing has to be replaced afterwards.
+  push:
+    tags: ['v*']
   pull_request:
-  # A manual dispatch builds every platform and uploads the archives without
-  # publishing anything; only a published release runs the release job.
+  # A manual dispatch builds and verifies every platform without creating a
+  # release, so the release path can be exercised without inventing a version.
   workflow_dispatch:
 permissions:
   contents: read
@@ -181,7 +184,7 @@ jobs:
         shell: bash
         run: python tools/smoke_installers.py ${{ matrix.platform }}
   build:
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -202,17 +205,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.ref }}
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Stamp release version
         shell: bash
         run: |
-          # A release stamps its tag. A dispatch stamps the committed version,
+          # A tag stamps that version. A dispatch stamps the committed version,
           # which exercises the stamping path without inventing a version.
-          if [ -n "${{ github.event.release.tag_name }}" ]; then
-            python tools/set-release-version.py "${{ github.event.release.tag_name }}"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            python tools/set-release-version.py "${{ github.ref_name }}"
           else
             python tools/set-release-version.py "v$(python tools/check_product_metadata.py)"
           fi
@@ -269,8 +272,8 @@ jobs:
           PLATFORM_NAME: ${{ matrix.platform }}
         run: |
           VERSION="$(python tools/check_product_metadata.py)"
-          if [ -n "${{ github.event.release.tag_name }}" ]; then
-            python tools/check_product_metadata.py --expected "${{ github.event.release.tag_name }}"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            python tools/check_product_metadata.py --expected "${{ github.ref_name }}"
           fi
           python tools/package_release.py "$PLATFORM_NAME" --version "v$VERSION"
       - name: Install Inno Setup
@@ -291,6 +294,14 @@ jobs:
             # which ends up in the name.
             Linux) python tools/package_installers.py linux --version "$VERSION" --arch "$(uname -m)" ;;
           esac
+      # A release publishes only installers this checked on the platform that
+      # built them: the setup is run silently, the disk image is mounted and the
+      # AppImage is extracted, exactly as the pull-request smoke job does.
+      - name: Verify the installer
+        shell: bash
+        env:
+          PLATFORM_NAME: ${{ matrix.platform }}
+        run: python tools/verify_release.py "$PLATFORM_NAME"
       # GitHub serves an artifact as a zip, so the installer is uploaded on its
       # own: unzipping the download leaves the installer and nothing else.
       - name: Upload the installer
@@ -313,12 +324,17 @@ jobs:
             release/*-macOS.zip
             release/*-Linux.zip
           if-no-files-found: error
-  release:
-    if: github.event_name == 'release'
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # The installers carry a build-provenance attestation, which records the
+      # workflow and commit that produced each file.
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -340,8 +356,51 @@ jobs:
           done
           ls -l release
           exit "$status"
-      - name: Publish tagged release
+      - name: Write the checksum manifest
+        shell: bash
+        run: |
+          cd release
+          # The manifest is written outside the glob, so it never hashes itself.
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort | xargs sha256sum > SHA256SUMS
+          cat SHA256SUMS
+      - name: Attest where the installers were built
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            release/*-Windows-Setup.exe
+            release/*-macOS.dmg
+            release/*-Linux-*.AppImage
+      - name: Create the draft release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A draft created by hand before the tag is reused, so its release
+          # notes survive the build. A published release is never touched.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            if [ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "::error::release $TAG is already published; published assets are never replaced"
+              exit 1
+            fi
+          else
+            gh release create "$TAG" --draft --generate-notes --title "$TAG" --repo "$GITHUB_REPOSITORY"
+          fi
+      # No --clobber: an upload that would replace a file fails instead, so the
+      # bytes behind a version number cannot change after it is published.
+      - name: Upload the verified artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY"
+      - name: Publish only the complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          local="$(find release -maxdepth 1 -type f | wc -l)"
+          remote="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')"
+          if [ "$local" -ne "$remote" ]; then
+            echo "::error::$TAG holds $remote of $local uploaded files; leaving it as a draft"
+            exit 1
+          fi
+          gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
