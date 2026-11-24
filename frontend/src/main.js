@@ -1,7 +1,7 @@
 import {io} from 'socket.io-client';
 import {Events} from '@wailsio/runtime';
 import * as backend from '../bindings/github.com/skperdue68/GuildSync-Voice-Mute/app.js';
-import {LoginComplete,LoginError,ShortcutError,VoiceShortcutEdge,VoiceShortcutStatus} from '../bindings/events/index.js';
+import {LoginComplete,LoginError,ShortcutError,UpdateAvailable,VoiceShortcutEdge,VoiceShortcutStatus} from '../bindings/events/index.js';
 import {createVoiceSession} from './voice-session.js';
 import {createShortcutCapture} from './shortcut-capture.js';
 import {createAuthCoordinator,canEnableVoiceSession} from './auth-state.js';
@@ -10,7 +10,6 @@ import {createShortcutActivation} from './shortcut-activation.js';
 const activation=createShortcutActivation();
 let availability={available:true,reason:''};
 const api=()=>backend;
-const UPDATE_INTERVAL_MS=30*60*1000;
 const auth=createAuthCoordinator();
 let session=null,socket=null,settings={enabled:false,shortcut:'Ctrl+M',timeout_seconds:10},capturing=false,busy=false,startAtLogin=false,startAtLoginBlocked='',updateInfo=null,updateMessage='';
 document.querySelector('#app').innerHTML=`<h1>GuildSync Voice Mute</h1><p id="appVersion" class="hint"></p><p class="intro">Press your shortcut to mute lower-ranked members in your Discord voice channel. The mute ends on its own, and pressing again restarts the countdown.</p><section><p id="account">Not signed in</p><div class="buttons"><button id="login">Sign in with Discord</button><button id="logout" hidden>Sign out</button></div></section><section><label class="toggle"><input type="checkbox" id="enabled"> Enable the mute shortcut</label><p class="hint" id="enabledHint">Works in any app while the companion is running.</p><p>Shortcut: <strong id="shortcut">Ctrl+M</strong></p><p><label for="timeout">Auto-unmute after <input type="number" id="timeout" min="3" max="120" step="1" value="10"> seconds</label></p><div class="buttons"><button id="capture">Set shortcut</button><button id="default" class="secondary">Return to Default</button></div><p class="hint" id="captureHelp">Press one key with optional Ctrl, Alt or Shift, then release it to save. Escape cancels.</p><label class="toggle"><input type="checkbox" id="startAtLogin"> Start at login</label><p class="hint" id="startAtLoginHint" hidden></p></section><section id="updateSection" hidden><p id="updateStatus" role="status"></p><div class="buttons"><button id="downloadUpdate">Download Update</button></div></section><p id="availability" role="status"></p><p id="status" role="status" aria-live="polite">Starting…</p><p class="hint">Moderator mutes are preserved. Equal and higher ranks are protected. The mute ends automatically after the configured time. Closing the window keeps the companion running in the system tray when your desktop has one.</p>`;
@@ -49,11 +48,11 @@ Events.On(VoiceShortcutStatus,event=>status(event.data));
 Events.On(LoginComplete,event=>connect(event.data).catch(status));
 Events.On(LoginError,event=>status(event.data));
 Events.On(ShortcutError,event=>{activation.fail();controller.stop();api().SetShortcutActive(false).catch(()=>{});status(event.data);});
+Events.On(UpdateAvailable,event=>{updateInfo=event.data;renderUpdate();});
 window.addEventListener('beforeunload',()=>{controller.stop();socket?.disconnect();});
 // Revalidate saved accounts while running. Socket-side checks remain authoritative for every request.
 let verifying=false;
 setInterval(async()=>{if(!session?.logged_in||verifying)return;verifying=true;try{await auth.run(()=>api().GetSession(),fresh=>{if(!fresh.logged_in)throw Error('Sign in again.');session=fresh;render();},async error=>{const epoch=auth.invalidate();await disableListener();if(epoch!==auth.current())return;clearSocket();session=null;render();status(error);});}finally{verifying=false;}},30000);
-// Look for a newer release while the companion runs, so an update is offered without pressing anything. The first check runs once startup has proved the backend answers; this timer covers an app left running for hours. A failed background check stays silent rather than reporting itself over the status line.
-setInterval(()=>{if(!busy)checkForUpdates().catch(()=>{});},UPDATE_INTERVAL_MS);
+// Look for a newer release while the companion runs, so an update is offered without pressing anything. The startup check runs once the backend answers; Go repeats it every 30 minutes even while this window is hidden in the tray, where a webview timer would be throttled, and the update-available event carries each result here. A failed background check stays silent rather than reporting itself over the status line.
 async function initialize(){try{el('appVersion').textContent='Version '+await api().GetAppVersion();if(!await api().StartAtLoginSupported())startAtLoginBlocked='This build cannot register a login item, so the option stays off.';startAtLogin=await api().GetStartAtLogin();settings=await api().GetShortcutSettings();await connect(await api().GetSession());}catch(error){render();status(error);}checkForUpdates().catch(()=>{});}
 initialize();

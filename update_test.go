@@ -67,6 +67,42 @@ func TestCheckForUpdateDoesNotOfferTheRunningVersion(t *testing.T) {
 	}
 }
 
+func TestAnnounceUpdateHandsTheResultToTheWindow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"` + updateReleaseURL + `"}`))
+	}))
+	defer server.Close()
+	announced := []UpdateInfo{}
+	app := &App{updateURL: server.URL, emitUpdate: func(info UpdateInfo) { announced = append(announced, info) }}
+	info := app.announceUpdate()
+	if len(announced) != 1 {
+		t.Fatalf("announced %d times", len(announced))
+	}
+	if !announced[0].Available || announced[0].Version != "9.9.9" || announced[0].Version != info.Version {
+		t.Fatalf("announced %+v, returned %+v", announced[0], info)
+	}
+}
+
+func TestAnnounceUpdateStaysSilentWhenTheCheckFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "rate limited", http.StatusForbidden)
+	}))
+	defer server.Close()
+	announced := 0
+	app := &App{updateURL: server.URL, emitUpdate: func(UpdateInfo) { announced++ }}
+	if info := app.announceUpdate(); info.Available || announced != 0 {
+		t.Fatalf("a failed background check was reported: %+v, %d announcements", info, announced)
+	}
+}
+
+func TestUpdateWatcherStartsOnceAndStopsHarmlessly(t *testing.T) {
+	app := &App{}
+	app.startUpdateWatcher()
+	app.startUpdateWatcher()
+	app.stopUpdateWatcher()
+	app.stopUpdateWatcher()
+}
+
 func TestCheckForUpdateReportsHTTPFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "rate limited", http.StatusForbidden)

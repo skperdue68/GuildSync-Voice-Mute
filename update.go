@@ -25,6 +25,9 @@ const (
 	// A release installer is a few megabytes. Anything near this cap is not one,
 	// so the download stops before it can fill the disk.
 	maxUpdateBytes = 512 << 20
+	// A running companion looks for a release this often. The first check is the
+	// window's, on startup; this timer covers an app left running for hours.
+	updateCheckInterval = 30 * time.Minute
 )
 
 // UpdateInfo is what the UI needs from a check: whether a newer release exists,
@@ -390,6 +393,62 @@ func (a *App) lookupUpdate() (UpdateInfo, *updateAsset, error) {
 func (a *App) CheckForUpdate() (UpdateInfo, error) {
 	info, _, err := a.lookupUpdate()
 	return info, err
+}
+
+// startUpdateWatcher repeats the check while the app runs. The timer lives here
+// rather than in the window because the window is usually hidden in the tray,
+// where a webview throttles timers and the promised interval quietly slips. The
+// first tick waits one full interval, so it never races the startup check the
+// frontend makes once the backend answers.
+func (a *App) startUpdateWatcher() {
+	a.mu.Lock()
+	if a.updateStop != nil {
+		a.mu.Unlock()
+		return
+	}
+	stop := make(chan struct{})
+	a.updateStop = stop
+	a.mu.Unlock()
+	go func() {
+		ticker := time.NewTicker(updateCheckInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				a.announceUpdate()
+			}
+		}
+	}()
+}
+
+// stopUpdateWatcher ends the timer. Shutting down twice is harmless.
+func (a *App) stopUpdateWatcher() {
+	a.mu.Lock()
+	stop := a.updateStop
+	a.updateStop = nil
+	a.mu.Unlock()
+	if stop != nil {
+		close(stop)
+	}
+}
+
+// announceUpdate runs one background check and hands the result to the window,
+// which hides the update row again when nothing is available. A check that
+// cannot reach GitHub is not reported: a companion that is mostly backgrounded
+// would turn a dropped connection into a status line that never clears.
+func (a *App) announceUpdate() UpdateInfo {
+	info, err := a.CheckForUpdate()
+	if err != nil {
+		return UpdateInfo{}
+	}
+	if a.emitUpdate != nil {
+		a.emitUpdate(info)
+	} else {
+		a.emit(eventUpdateAvailable, info)
+	}
+	return info
 }
 
 // OpenReleasePage opens a GuildSync release page in the system browser, refusing

@@ -12,6 +12,7 @@ const (
 	eventLoginComplete       = "login-complete"
 	eventLoginError          = "login-error"
 	eventShortcutError       = "shortcut-error"
+	eventUpdateAvailable     = "update-available"
 )
 
 func init() {
@@ -20,4 +21,5 @@ func init() {
 	application.RegisterEvent[Session](eventLoginComplete)
 	application.RegisterEvent[string](eventLoginError)
 	application.RegisterEvent[string](eventShortcutError)
+	application.RegisterEvent[UpdateInfo](eventUpdateAvailable)
 }
