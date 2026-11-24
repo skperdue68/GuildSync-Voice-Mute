@@ -46,6 +46,9 @@ func main() {
 		}
 	})
 	service.startTray()
+	// Look for a release on the clock rather than in the window, so an update is
+	// offered even when the window spends the day hidden in the tray.
+	service.startUpdateWatcher()
 	err := app.Run()
 	if err != nil {
 		println(err.Error())

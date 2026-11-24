@@ -41,6 +41,11 @@ type App struct {
 	// installer handler; both fall back to the real ones when empty or nil.
 	assetBase string
 	openPath  func(string) error
+
+	// updateStop ends the background update timer; emitUpdate stands in for the
+	// event the window listens to when a check runs.
+	updateStop chan struct{}
+	emitUpdate func(UpdateInfo)
 }
 
 func NewApp() *App {
@@ -49,6 +54,7 @@ func NewApp() *App {
 }
 func (a *App) ServiceShutdown() error {
 	_ = a.SetShortcutActive(false)
+	a.stopUpdateWatcher()
 	a.stopOAuth()
 	return nil
 }
