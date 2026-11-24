@@ -15,6 +15,9 @@ jobs:
   checks:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # A package mirror that crawls must fail the job instead of counting
+    # toward the six-hour default limit.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -31,6 +34,11 @@ jobs:
       - name: Audit npm dependencies
         run: npm audit --audit-level=high
         working-directory: frontend
+      # Point apt at Canonical's archive before it contacts the network; the
+      # runner image ranks a regional mirror first, and tools/apt_mirrors.py
+      # explains why it cannot wait until after `apt-get update`.
+      - name: Point apt at the standard Ubuntu mirrors
+        run: sudo python3 tools/apt_mirrors.py
       # govulncheck type-checks every package, so the GTK/WebKit headers the
       # Wails Linux build needs must be present even though nothing is built.
       - name: Install native dependencies for govulncheck
@@ -59,6 +67,7 @@ jobs:
   compile:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -73,6 +82,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
+      - name: Point apt at the standard Ubuntu mirrors
+        run: sudo python3 tools/apt_mirrors.py
       - name: Install Wails Linux dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
       - name: Install Wails 3 CLI
@@ -185,6 +196,9 @@ jobs:
             platform: Linux
             universal: 'false'
     runs-on: ${{ matrix.os }}
+    # The Linux leg is the one that installs packages, so it carries the
+    # tightest limit: a crawling mirror fails in minutes, not in hours.
+    timeout-minutes: ${{ matrix.platform == 'Linux' && 15 || 30 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -211,6 +225,9 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Point apt at the standard Ubuntu mirrors
+        if: runner.os == 'Linux'
+        run: sudo python3 tools/apt_mirrors.py
       - name: Install Linux native dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
